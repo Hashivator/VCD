@@ -3,3 +3,5 @@ urllib3>=1.26.0
 tqdm>=4.64.0
 colorama>=0.4.6
 pyfiglet>=0.8.0
+beautifulsoup4>=4.11.0
+browser-cookie3>=0.16.0
