@@ -1,6 +1,6 @@
 <h1 align="center">
   <br>
-  <a href="https://github.com/IAUCourseExp/VCD"><img src="https://raw.githubusercontent.com/IAUCourseExp/VCD/main/vcd-logo.png" alt="VCD" width="800"></a>
+  <a href="https://github.com/IAUCourseExp/VCD"><img src="https://raw.githubusercontent.com/IAUCourseExp/VCD/main/vcd0.3.png" alt="VCD" width="3000"></a>
   <br>
   VCD – Vadana Class Downloader
   <br>
@@ -33,6 +33,48 @@
 ---
 
 ## ✨ Key Features
+
+## GUI — v0.3 features (June 22nd 2026)
+
+**Download & encode**
+- Quality presets: Ultra (1080p) / High (720p) / Balanced (720p) / Compact (480p) / Custom
+- GPU encode selector — NVIDIA, AMD, Intel, or CPU; auto-detected and defaulted at startup
+- Advanced settings: resolution, FPS, CRF, audio bitrate, x264 preset, tail padding
+
+**Workflow**
+- Batch queue — queue multiple class URLs, run them one after another automatically
+- Instant stop — kills FFmpeg and closes the download socket immediately; no waiting
+- Auto-retry — retries failed jobs up to 3× with increasing delay
+- Disk space check — warns before starting if output folder has < 500 MB free
+
+**History & files**
+- Job history — every job is logged persistently to `~/.vcd/history.json`
+- Output files tab — browse rendered videos, preview thumbnail, play, open folder, delete
+
+**Live feedback**
+- Real-time speed graph with ETA and bytes downloaded
+- Log panel with per-level filter (INFO / STEP / WARN / ERROR) and free-text search
+- System tray — minimize to background, get a desktop notification on finish
+
+**Convenience**
+- Cookie profiles — save and reload multiple named BREEZESESSION presets
+- URL autocomplete — remembers the last 30 URLs
+- Resizable splitter between the controls panel and the log
+
+**Keyboard shortcuts**
+
+| Keys | Action |
+|------|--------|
+| `Ctrl+Enter` | Start job |
+| `Esc` | Stop job |
+| `Ctrl+Shift+Q` | Add current URL to batch queue |
+| `Ctrl+L` | Switch to Log tab |
+| `Ctrl+H` | Switch to History tab |
+| `Ctrl+F` | Focus log search |
+| `Ctrl+S` | Save log to file |
+| `Ctrl+Q` | Quit |
+
+---
 
 ### 🚀 What’s new in v0.2
 
