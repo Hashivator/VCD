@@ -26,7 +26,7 @@ from vcd.core.exceptions import (
     ToolNotFoundError,
 )
 from vcd.core.logging import log
-from vcd.core.network import DownloadConfig
+from vcd.core.config import DownloadConfig, RenderConfig
 from vcd.core.network import download_and_extract
 
 
@@ -46,18 +46,6 @@ _current_response = None  # streaming response — closed on stop to interrupt d
 # ═══════════════════════════════════════════════════════════════════════════════
 # Config dataclasses
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-@dataclass
-class RenderConfig:
-    canvas_w: int = 1280
-    canvas_h: int = 720
-    fps: int = 30
-    crf: int = 30
-    video_preset: str = "veryfast"
-    audio_bitrate: str = "92k"
-    padding_ms: int = 2000
-    gpu: str = "cpu"  # "cpu" | "nvidia" | "amd" | "intel"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

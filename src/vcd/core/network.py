@@ -1,4 +1,3 @@
-from dataclasses import dataclass, field
 from pathlib import Path
 import random
 import time
@@ -10,6 +9,7 @@ import requests
 from tqdm import tqdm
 
 from vcd.core.auth import acquire_authenticated_session
+from vcd.core.config import DownloadConfig
 from vcd.core.exceptions import DownloadError
 from vcd.core.logging import log
 
@@ -44,24 +44,6 @@ def retry(
         return wrapper
 
     return decorator
-
-
-@dataclass
-class DownloadConfig:
-    verify_ssl: bool = False
-    chunk_size: int = 8192
-    timeout: int = 60
-    headers: dict = field(
-        default_factory=lambda: {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "fa,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-    )
 
 
 # Download helpers
