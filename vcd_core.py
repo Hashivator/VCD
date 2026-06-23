@@ -25,6 +25,13 @@ from tqdm import tqdm
 from colorama import init as colorama_init, Fore, Style
 import random
 
+from vcd.core.exceptions import (
+    ToolNotFoundError,
+    AuthenticationError,
+    DownloadError,
+    MediaProcessingError,
+)
+
 colorama_init(autoreset=True)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -35,12 +42,14 @@ except ImportError:
 
 try:
     from bs4 import BeautifulSoup
+
     BS4_AVAILABLE = True
 except ImportError:
     BS4_AVAILABLE = False
 
 try:
     import browser_cookie3
+
     BROWSER_COOKIE3_AVAILABLE = True
 except ImportError:
     BROWSER_COOKIE3_AVAILABLE = False
@@ -48,31 +57,12 @@ except ImportError:
 # holds the currently-running ffmpeg subprocess so GUI can kill it on stop
 _current_proc: "Optional[subprocess.Popen]" = None
 
-_current_response = None    # streaming response — closed on stop to interrupt download
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Custom exceptions
-# ═══════════════════════════════════════════════════════════════════════════════
-
-class VCDError(Exception):
-    """Base for all tool‑specific errors."""
-
-class ToolNotFoundError(VCDError):
-    """ffmpeg or ffprobe is missing."""
-
-class AuthenticationError(VCDError):
-    """Could not log in or session is invalid."""
-
-class DownloadError(VCDError):
-    """Download failed or archive is corrupt."""
-
-class MediaProcessingError(VCDError):
-    """Something went wrong while reading media / XML."""
-
+_current_response = None  # streaming response — closed on stop to interrupt download
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Config dataclasses
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 @dataclass
 class RenderConfig:
@@ -83,7 +73,7 @@ class RenderConfig:
     video_preset: str = "veryfast"
     audio_bitrate: str = "92k"
     padding_ms: int = 2000
-    gpu: str = "cpu"   # "cpu" | "nvidia" | "amd" | "intel"
+    gpu: str = "cpu"  # "cpu" | "nvidia" | "amd" | "intel"
 
 
 @dataclass
@@ -91,15 +81,17 @@ class DownloadConfig:
     verify_ssl: bool = False
     chunk_size: int = 8192
     timeout: int = 60
-    headers: dict = field(default_factory=lambda: {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "fa,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    })
+    headers: dict = field(
+        default_factory=lambda: {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "fa,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        }
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -107,12 +99,12 @@ class DownloadConfig:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 LEVEL_COLORS = {
-    "INFO":    Fore.GREEN,
-    "WARN":    Fore.YELLOW,
-    "ERROR":   Fore.RED,
+    "INFO": Fore.GREEN,
+    "WARN": Fore.YELLOW,
+    "ERROR": Fore.RED,
     "SUCCESS": Fore.CYAN,
-    "STEP":    Fore.MAGENTA,
-    "DEBUG":   Fore.WHITE,
+    "STEP": Fore.MAGENTA,
+    "DEBUG": Fore.WHITE,
 }
 
 
@@ -120,8 +112,7 @@ def log(msg: str, level: str = "INFO") -> None:
     now = datetime.now().strftime("%H:%M:%S")
     color = LEVEL_COLORS.get(level, Fore.WHITE)
     print(
-        f"{Style.DIM}[{now}]{Style.RESET_ALL} "
-        f"{color}{level:7s}{Style.RESET_ALL} {msg}",
+        f"{Style.DIM}[{now}]{Style.RESET_ALL} {color}{level:7s}{Style.RESET_ALL} {msg}",
         flush=True,
     )
 
@@ -135,6 +126,7 @@ IS_WINDOWS = platform.system() == "Windows"
 
 class ToolManager:
     """Holds validated paths to ffmpeg and ffprobe."""
+
     def __init__(self, ffmpeg_path: str, ffprobe_path: str):
         self.ffmpeg = ffmpeg_path
         self.ffprobe = ffprobe_path
@@ -147,7 +139,7 @@ def find_tool(base_name: str) -> Optional[str]:
         candidates.append(base_name + ".exe")
 
     try:
-        bundle_dir = sys._MEIPASS   # type: ignore[attr-defined]
+        bundle_dir = sys._MEIPASS  # type: ignore[attr-defined]
     except AttributeError:
         bundle_dir = os.path.abspath(".")
 
@@ -186,8 +178,19 @@ def init_tools() -> ToolManager:
 # FFprobe helpers
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _run_ffprobe(ffprobe_path: str, extra_args: list[str], file_path: Path) -> Optional[dict]:
-    cmd = [ffprobe_path, "-v", "quiet", "-print_format", "json", *extra_args, str(file_path)]
+
+def _run_ffprobe(
+    ffprobe_path: str, extra_args: list[str], file_path: Path
+) -> Optional[dict]:
+    cmd = [
+        ffprobe_path,
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        *extra_args,
+        str(file_path),
+    ]
     try:
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:
@@ -220,23 +223,36 @@ def probe_duration(ffprobe_path: str, file_path: Path) -> float:
 # FFmpeg runner
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def execute_ffmpeg(ffmpeg_path: str, cmd_parts: list[str], description: str = "FFmpeg",
-                   duration_sec: Optional[float] = None) -> None:
+
+def execute_ffmpeg(
+    ffmpeg_path: str,
+    cmd_parts: list[str],
+    description: str = "FFmpeg",
+    duration_sec: Optional[float] = None,
+) -> None:
     log(f"Launching: {description}")
     full_cmd = (
         [ffmpeg_path]
         + ["-progress", "pipe:1", "-nostats", "-loglevel", "quiet"]
-        + cmd_parts[1:] if cmd_parts[0] == ffmpeg_path else cmd_parts
+        + cmd_parts[1:]
+        if cmd_parts[0] == ffmpeg_path
+        else cmd_parts
     )
     global _current_proc
-    proc = subprocess.Popen(full_cmd, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen(
+        full_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
     _current_proc = proc
 
     pbar = None
     if duration_sec and duration_sec > 0:
-        pbar = tqdm(total=int(duration_sec * 1_000_000), unit="µs",
-                    desc=description, colour="cyan", smoothing=0.02)
+        pbar = tqdm(
+            total=int(duration_sec * 1_000_000),
+            unit="µs",
+            desc=description,
+            colour="cyan",
+            smoothing=0.02,
+        )
 
     last_us = 0
     try:
@@ -255,7 +271,7 @@ def execute_ffmpeg(ffmpeg_path: str, cmd_parts: list[str], description: str = "F
 
     finally:
         _current_proc = None
-    
+
     if pbar:
         pbar.close()
 
@@ -268,9 +284,14 @@ def execute_ffmpeg(ffmpeg_path: str, cmd_parts: list[str], description: str = "F
 # Retry helper for iranian networks:(
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def retry(max_retries: int = 3, backoff_factor: float = 2.0,
-          exceptions: tuple = (requests.RequestException,)) -> Callable:
+
+def retry(
+    max_retries: int = 3,
+    backoff_factor: float = 2.0,
+    exceptions: tuple = (requests.RequestException,),
+) -> Callable:
     """Decorator: retry a network call with exponential backoff."""
+
     def decorator(func: Callable) -> Callable:
         def wrapper(*args, **kwargs):
             last_exc = None
@@ -280,17 +301,25 @@ def retry(max_retries: int = 3, backoff_factor: float = 2.0,
                 except exceptions as exc:
                     last_exc = exc
                     if attempt < max_retries - 1:
-                        delay = backoff_factor ** attempt + random.uniform(0, 1)
-                        log(f"Retry {attempt+1}/{max_retries} after {delay:.1f}s – {exc}", "WARN")
+                        delay = backoff_factor**attempt + random.uniform(0, 1)
+                        log(
+                            f"Retry {attempt + 1}/{max_retries} after {delay:.1f}s – {exc}",
+                            "WARN",
+                        )
                         time.sleep(delay)
-            raise DownloadError(f"Network request failed after {max_retries} attempts: {last_exc}")
+            raise DownloadError(
+                f"Network request failed after {max_retries} attempts: {last_exc}"
+            )
+
         return wrapper
+
     return decorator
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Download helpers
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def _build_zip_url(meeting_url: str) -> tuple[str, str]:
     parsed = urlparse(meeting_url)
@@ -331,23 +360,27 @@ def _looks_like_zip(resp: requests.Response) -> bool:
 
 
 @retry(max_retries=3, backoff_factor=2.0)
-def _stream_to_file(resp: requests.Response, dest: Path,
-                    cfg: DownloadConfig) -> None:
+def _stream_to_file(resp: requests.Response, dest: Path, cfg: DownloadConfig) -> None:
     """Download the response body to a file with a progress bar."""
     global _current_response
     _current_response = resp
     total = int(resp.headers.get("content-length", 0))
     try:
         with open(dest, "wb") as fh:
-            with tqdm(total=total or None, unit="B", unit_scale=True,
-                      desc=f"↓ {dest.name}", colour="#00ff00") as pbar:
+            with tqdm(
+                total=total or None,
+                unit="B",
+                unit_scale=True,
+                desc=f"↓ {dest.name}",
+                colour="#00ff00",
+            ) as pbar:
                 for chunk in resp.iter_content(cfg.chunk_size):
                     if not chunk:
                         continue
                     fh.write(chunk)
                     pbar.update(len(chunk))
     finally:
-        _current_response = None    # always clear on exit, success or not
+        _current_response = None  # always clear on exit, success or not
 
 
 def _try_extract(zip_path: Path, target_dir: Path) -> bool:
@@ -369,6 +402,7 @@ def _try_extract(zip_path: Path, target_dir: Path) -> bool:
 #  Authentication
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _make_session(cfg: DownloadConfig) -> requests.Session:
     s = requests.Session()
     s.headers.update(cfg.headers)
@@ -378,8 +412,10 @@ def _make_session(cfg: DownloadConfig) -> requests.Session:
 
 # ── Method A – Adobe Connect XML API login ────────────────────────────────────
 
-def _login_via_ac_api(base_url: str, username: str, password: str,
-                      cfg: DownloadConfig) -> Optional[requests.Session]:
+
+def _login_via_ac_api(
+    base_url: str, username: str, password: str, cfg: DownloadConfig
+) -> Optional[requests.Session]:
     """
     Use the official Adobe Connect XML API.
     Returns an authenticated session or None.
@@ -415,11 +451,15 @@ def _login_via_ac_api(base_url: str, username: str, password: str,
         log(f"[Auth-API] Login rejected: code={code} sub={sub} detail={detail}", "WARN")
         return None
     except ET.ParseError:
-        log("[Auth-API] Response is not XML – server may not support this endpoint.", "WARN")
+        log(
+            "[Auth-API] Response is not XML – server may not support this endpoint.",
+            "WARN",
+        )
         return None
 
 
 # ── Method B – HTML form login ────────────────────────────────────────────────
+
 
 def _scrape_form_fields(html: str) -> dict[str, str]:
     """Extract all hidden/visible input names and default values."""
@@ -438,12 +478,14 @@ def _scrape_form_fields(html: str) -> dict[str, str]:
         # Simple regex fallback
         for m in re.finditer(
             r'<input[^>]+name=["\']([^"\']+)["\'][^>]*value=["\']([^"\']*)["\']',
-            html, re.I
+            html,
+            re.I,
         ):
             fields[m.group(1)] = m.group(2)
         for m in re.finditer(
             r'<input[^>]+value=["\']([^"\']*)["\'][^>]*name=["\']([^"\']+)["\']',
-            html, re.I
+            html,
+            re.I,
         ):
             fields[m.group(2)] = m.group(1)
     return fields
@@ -454,8 +496,9 @@ def _find_form_action(html: str, page_url: str) -> str:
     return urljoin(page_url, m.group(1)) if m else page_url
 
 
-def _login_via_html_form(login_page_url: str, username: str, password: str,
-                         cfg: DownloadConfig) -> Optional[requests.Session]:
+def _login_via_html_form(
+    login_page_url: str, username: str, password: str, cfg: DownloadConfig
+) -> Optional[requests.Session]:
     """
     1. GET the login page.
     2. Parse the form.
@@ -486,7 +529,7 @@ def _login_via_html_form(login_page_url: str, username: str, password: str,
 
     log(f"[Auth-Form] POSTing to: {form_action}")
     # Hide password value in log
-    safe_fields = {k: ('***' if 'pass' in k.lower() else v) for k, v in fields.items()}
+    safe_fields = {k: ("***" if "pass" in k.lower() else v) for k, v in fields.items()}
     log(f"[Auth-Form] Fields: {safe_fields}")
 
     try:
@@ -504,16 +547,26 @@ def _login_via_html_form(login_page_url: str, username: str, password: str,
     body_lower = post_resp.text.lower()
 
     failed_signals = [
-        "invalid password", "wrong password", "login failed",
-        "نام کاربری", "رمز", "incorrect", "خطا در ورود",
+        "invalid password",
+        "wrong password",
+        "login failed",
+        "نام کاربری",
+        "رمز",
+        "incorrect",
+        "خطا در ورود",
         "authentication failed",
     ]
     if any(sig in body_lower for sig in failed_signals):
-        log("[Auth-Form] Login appears to have failed (error text in response).", "WARN")
+        log(
+            "[Auth-Form] Login appears to have failed (error text in response).", "WARN"
+        )
         return None
 
     if "login" in final_url.lower() and "logout" not in body_lower:
-        log("[Auth-Form] Still on login page after POST – credentials may be wrong.", "WARN")
+        log(
+            "[Auth-Form] Still on login page after POST – credentials may be wrong.",
+            "WARN",
+        )
         return None
 
     log("[Auth-Form] Form login appears successful.", "SUCCESS")
@@ -522,8 +575,10 @@ def _login_via_html_form(login_page_url: str, username: str, password: str,
 
 # ── Method C – Manual cookie paste  ─────────────────────────────────
 
-def _login_via_manual_cookie(cfg: DownloadConfig,
-                              server_domain: str) -> Optional[requests.Session]:
+
+def _login_via_manual_cookie(
+    cfg: DownloadConfig, server_domain: str
+) -> Optional[requests.Session]:
     """
     Ask the user to paste a cookie string (whole header or bare value).
     Returns a session with that cookie set.
@@ -542,7 +597,9 @@ def _login_via_manual_cookie(cfg: DownloadConfig,
 
   ⭐ Easier: If your class link has ?session=…, just pass that URL directly.
 """)
-    raw = input(Fore.LIGHTMAGENTA_EX + "  Paste Cookie value: " + Style.RESET_ALL).strip()
+    raw = input(
+        Fore.LIGHTMAGENTA_EX + "  Paste Cookie value: " + Style.RESET_ALL
+    ).strip()
     if not raw:
         return None
 
@@ -563,8 +620,10 @@ def _login_via_manual_cookie(cfg: DownloadConfig,
 
 # ── Method D – browser_cookie3 (optional) ─────────────────────────────────────
 
-def _login_via_browser_cookies(domain: str,
-                                cfg: DownloadConfig) -> Optional[requests.Session]:
+
+def _login_via_browser_cookies(
+    domain: str, cfg: DownloadConfig
+) -> Optional[requests.Session]:
     if not BROWSER_COOKIE3_AVAILABLE:
         return None
 
@@ -599,6 +658,7 @@ def _login_via_browser_cookies(domain: str,
 # ═══════════════════════════════════════════════════════════════════════════════
 # Login orchestrator – tries everything in a sensible order
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def acquire_authenticated_session(
     meeting_url: str,
@@ -672,6 +732,7 @@ def acquire_authenticated_session(
 # Download orchestrator
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def download_and_extract(
     meeting_url: str,
     target_dir: str,
@@ -726,6 +787,7 @@ def download_and_extract(
 # XML timing extraction
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def find_base_tick_from_xml(xml_path: Path) -> Optional[int]:
     try:
         tree = ET.parse(str(xml_path))
@@ -739,7 +801,11 @@ def find_base_tick_from_xml(xml_path: Path) -> Optional[int]:
 
     for elem in root.findall(".//Message"):
         method_el = elem.find("Method")
-        if method_el is None or not method_el.text or "pacingTick" not in method_el.text:
+        if (
+            method_el is None
+            or not method_el.text
+            or "pacingTick" not in method_el.text
+        ):
             continue
         time_str = elem.get("time")
         number = elem.find("Number")
@@ -812,7 +878,7 @@ def collect_media_intervals(
         if has_audio:
             audio_clips.append(entry)
 
-        log(f"   {flv.name}: {start_ms/1000:.1f}s → {entry['end_ms']/1000:.1f}s")
+        log(f"   {flv.name}: {start_ms / 1000:.1f}s → {entry['end_ms'] / 1000:.1f}s")
 
     return screen_clips, audio_clips, global_base
 
@@ -821,15 +887,20 @@ def collect_media_intervals(
 # Timeline builder
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _build_continuous_segments(clips: list[dict], total_ms: float) -> list[dict]:
-    bps = sorted({0.0, total_ms} | {c["start_ms"] for c in clips} | {c["end_ms"] for c in clips})
+    bps = sorted(
+        {0.0, total_ms} | {c["start_ms"] for c in clips} | {c["end_ms"] for c in clips}
+    )
     segs: list[dict] = []
     for i in range(len(bps) - 1):
         s, e = bps[i], bps[i + 1]
         if e <= s:
             continue
         covering = [c for c in clips if c["start_ms"] <= s and c["end_ms"] >= e]
-        chosen = max(covering, key=lambda x: x["start_ms"])["file"] if covering else None
+        chosen = (
+            max(covering, key=lambda x: x["start_ms"])["file"] if covering else None
+        )
         if segs and segs[-1]["file"] == chosen:
             segs[-1]["end"] = e
         else:
@@ -838,7 +909,11 @@ def _build_continuous_segments(clips: list[dict], total_ms: float) -> list[dict]
 
 
 def _build_audio_mix_segments(audio_clips: list[dict], total_ms: float) -> list[dict]:
-    bps = sorted({0.0, total_ms} | {c["start_ms"] for c in audio_clips} | {c["end_ms"] for c in audio_clips})
+    bps = sorted(
+        {0.0, total_ms}
+        | {c["start_ms"] for c in audio_clips}
+        | {c["end_ms"] for c in audio_clips}
+    )
     segs: list[dict] = []
     for i in range(len(bps) - 1):
         s, e = bps[i], bps[i + 1]
@@ -853,13 +928,18 @@ def _build_audio_mix_segments(audio_clips: list[dict], total_ms: float) -> list[
 
 
 def write_timeline_xml(
-    folder: Path, screen_clips: list[dict], audio_clips: list[dict],
-    total_ms: float, out_path: Path,
+    folder: Path,
+    screen_clips: list[dict],
+    audio_clips: list[dict],
+    total_ms: float,
+    out_path: Path,
 ) -> None:
     v_segs = _build_continuous_segments(screen_clips, total_ms)
     a_segs = _build_audio_mix_segments(audio_clips, total_ms)
 
-    all_t = sorted({s["start"] for s in v_segs + a_segs} | {s["end"] for s in v_segs + a_segs})
+    all_t = sorted(
+        {s["start"] for s in v_segs + a_segs} | {s["end"] for s in v_segs + a_segs}
+    )
 
     def vid_at(t: float):
         for s in v_segs:
@@ -892,16 +972,24 @@ def write_timeline_xml(
         if vf is None:
             ET.SubElement(seg, "video", file="black")
         else:
-            ET.SubElement(seg, "video", file=vf.name,
-                          offset=str(round((t0 - fmap[vf]) / 1000, 3)),
-                          dur=str(round(dur / 1000, 3)))
+            ET.SubElement(
+                seg,
+                "video",
+                file=vf.name,
+                offset=str(round((t0 - fmap[vf]) / 1000, 3)),
+                dur=str(round(dur / 1000, 3)),
+            )
         if not af:
             ET.SubElement(seg, "audio", file="silence")
         else:
             for ac in af:
-                ET.SubElement(seg, "audio", file=ac["file"].name,
-                              offset=str(round((t0 - fmap[ac["file"]]) / 1000, 3)),
-                              dur=str(round(dur / 1000, 3)))
+                ET.SubElement(
+                    seg,
+                    "audio",
+                    file=ac["file"].name,
+                    offset=str(round((t0 - fmap[ac["file"]]) / 1000, 3)),
+                    dur=str(round(dur / 1000, 3)),
+                )
 
     pretty = minidom.parseString(ET.tostring(root, encoding="utf-8")).toprettyxml(
         indent="  ", encoding="utf-8"
@@ -913,6 +1001,7 @@ def write_timeline_xml(
 # ═══════════════════════════════════════════════════════════════════════════════
 # FilterGraphBuilder – helper for ffmpeg filter chains
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 class FilterGraphBuilder:
     def __init__(self):
@@ -930,6 +1019,7 @@ class FilterGraphBuilder:
 # Timeline reader & renderer
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _read_timeline_xml(path: Path) -> tuple[list[dict], dict, int]:
     tree = ET.parse(str(path))
     root = tree.getroot()
@@ -939,15 +1029,17 @@ def _read_timeline_xml(path: Path) -> tuple[list[dict], dict, int]:
 
     for seg in root.findall(".//segment"):
         ss = int(seg.get("start"))  # type: ignore
-        se = int(seg.get("end"))    # type: ignore
+        se = int(seg.get("end"))  # type: ignore
         ve = seg.find("video")
         vf = ve.get("file") if ve is not None else "black"
         if vf and vf != "black":
-            vo = float(ve.get("offset", 0))    # type: ignore
+            vo = float(ve.get("offset", 0))  # type: ignore
             vd = float(ve.get("dur", (se - ss) / 1000))  # type: ignore
         else:
             vo, vf, vd = None, "black", (se - ss) / 1000
-        video_plan.append({"start_ms": ss, "end_ms": se, "file": vf, "offset": vo, "dur": vd})
+        video_plan.append(
+            {"start_ms": ss, "end_ms": se, "file": vf, "offset": vo, "dur": vd}
+        )
 
         for ae in seg.findall("audio"):
             af = ae.get("file")
@@ -956,8 +1048,11 @@ def _read_timeline_xml(path: Path) -> tuple[list[dict], dict, int]:
             sd = float(ae.get("dur", (se - ss) / 1000)) * 1000
             om = float(ae.get("offset", 0)) * 1000
             if af not in audio_meta:
-                audio_meta[af] = {"first_start_ms": ss, "first_offset_ms": om,
-                                  "latest_end_ms": ss + sd}
+                audio_meta[af] = {
+                    "first_start_ms": ss,
+                    "first_offset_ms": om,
+                    "latest_end_ms": ss + sd,
+                }
             else:
                 info = audio_meta[af]
                 if ss < info["first_start_ms"]:
@@ -974,38 +1069,60 @@ def _video_encoder_args(cfg: "RenderConfig") -> list:
     GPU encoders use hardware-specific quality params roughly equivalent to CRF.
     """
     _nvenc_preset = {
-        "ultrafast": "p1", "superfast": "p2", "veryfast": "p3",
-        "faster": "p3", "fast": "p4", "medium": "p4",
-        "slow": "p5", "slower": "p6",
+        "ultrafast": "p1",
+        "superfast": "p2",
+        "veryfast": "p3",
+        "faster": "p3",
+        "fast": "p4",
+        "medium": "p4",
+        "slow": "p5",
+        "slower": "p6",
     }
     if cfg.gpu == "nvidia":
         return [
-            "-c:v", "h264_nvenc",
-            "-preset", _nvenc_preset.get(cfg.video_preset, "p4"),
-            "-rc", "vbr",
-            "-cq", str(cfg.crf),
-            "-b:v", "0",
+            "-c:v",
+            "h264_nvenc",
+            "-preset",
+            _nvenc_preset.get(cfg.video_preset, "p4"),
+            "-rc",
+            "vbr",
+            "-cq",
+            str(cfg.crf),
+            "-b:v",
+            "0",
         ]
     if cfg.gpu == "amd":
         return [
-            "-c:v", "h264_amf",
-            "-quality", "balanced",
-            "-rc", "cqp",
-            "-qp_i", str(cfg.crf),
-            "-qp_p", str(cfg.crf),
-            "-qp_b", str(cfg.crf),
+            "-c:v",
+            "h264_amf",
+            "-quality",
+            "balanced",
+            "-rc",
+            "cqp",
+            "-qp_i",
+            str(cfg.crf),
+            "-qp_p",
+            str(cfg.crf),
+            "-qp_b",
+            str(cfg.crf),
         ]
     if cfg.gpu == "intel":
         return [
-            "-c:v", "h264_qsv",
-            "-preset", cfg.video_preset,
-            "-global_quality", str(cfg.crf),
+            "-c:v",
+            "h264_qsv",
+            "-preset",
+            cfg.video_preset,
+            "-global_quality",
+            str(cfg.crf),
         ]
     # default: CPU libx264
     return [
-        "-c:v", "libx264",
-        "-preset", cfg.video_preset,
-        "-crf", str(cfg.crf),
+        "-c:v",
+        "libx264",
+        "-preset",
+        cfg.video_preset,
+        "-crf",
+        str(cfg.crf),
     ]
 
 
@@ -1026,40 +1143,58 @@ def render_video_from_timeline(
         if fn == "black" or fn in done:
             continue
         rows = [s for s in video_plan if s["file"] == fn]
-        video_srcs.append({"file": media_folder / fn,
-                            "start_ms": min(r["start_ms"] for r in rows),
-                            "end_ms":   max(r["end_ms"]   for r in rows)})
+        video_srcs.append(
+            {
+                "file": media_folder / fn,
+                "start_ms": min(r["start_ms"] for r in rows),
+                "end_ms": max(r["end_ms"] for r in rows),
+            }
+        )
         done.add(fn)
 
-    audio_srcs = [{"file": media_folder / fn,
-                   "start_ms": i["first_start_ms"],
-                   "end_ms":   i["latest_end_ms"]}
-                  for fn, i in audio_meta.items()]
+    audio_srcs = [
+        {
+            "file": media_folder / fn,
+            "start_ms": i["first_start_ms"],
+            "end_ms": i["latest_end_ms"],
+        }
+        for fn, i in audio_meta.items()
+    ]
 
     video_srcs.sort(key=lambda x: x["start_ms"])
     audio_srcs.sort(key=lambda x: x["start_ms"])
     nv, na = len(video_srcs), len(audio_srcs)
 
     cmd = [tools.ffmpeg, "-y"]
-    cmd += ["-f", "lavfi", "-i",
-            f"color=c=black:s={cfg.canvas_w}x{cfg.canvas_h}:r={cfg.fps}:d={total_sec},format=yuv420p"]
+    cmd += [
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c=black:s={cfg.canvas_w}x{cfg.canvas_h}:r={cfg.fps}:d={total_sec},format=yuv420p",
+    ]
     for vs in video_srcs:
         cmd += ["-i", str(vs["file"])]
     for as_ in audio_srcs:
         cmd += ["-i", str(as_["file"])]
     silence_idx = 1 + nv + na
-    cmd += ["-f", "lavfi", "-i",
-            f"anullsrc=channel_layout=stereo:sample_rate=44100:duration={total_sec}"]
+    cmd += [
+        "-f",
+        "lavfi",
+        "-i",
+        f"anullsrc=channel_layout=stereo:sample_rate=44100:duration={total_sec}",
+    ]
 
     fb = FilterGraphBuilder()
 
     if nv > 0:
         for idx, vs in enumerate(video_srcs):
-            fb.add(f"[{1+idx}:v]"
-                   f"scale={cfg.canvas_w}:{cfg.canvas_h}:force_original_aspect_ratio=decrease,"
-                   f"pad={cfg.canvas_w}:{cfg.canvas_h}:(ow-iw)/2:(oh-ih)/2,"
-                   f"setsar=1,format=rgba,"
-                   f"setpts=PTS-STARTPTS+{vs['start_ms']/1000}/TB[v{idx}]")
+            fb.add(
+                f"[{1 + idx}:v]"
+                f"scale={cfg.canvas_w}:{cfg.canvas_h}:force_original_aspect_ratio=decrease,"
+                f"pad={cfg.canvas_w}:{cfg.canvas_h}:(ow-iw)/2:(oh-ih)/2,"
+                f"setsar=1,format=rgba,"
+                f"setpts=PTS-STARTPTS+{vs['start_ms'] / 1000}/TB[v{idx}]"
+            )
         prev = "[0:v]"
         for idx in range(nv):
             lbl = f"vo{idx}" if idx < nv - 1 else "vout"
@@ -1071,24 +1206,40 @@ def render_video_from_timeline(
     alabs: list[str] = []
     for idx, as_ in enumerate(audio_srcs):
         lbl = f"a{idx}"
-        fb.add(f"[{1+nv+idx}:a]"
-               f"asetpts=PTS-STARTPTS,"
-               f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-               f"adelay={int(as_['start_ms'])}|{int(as_['start_ms'])}:all=1[{lbl}]")
+        fb.add(
+            f"[{1 + nv + idx}:a]"
+            f"asetpts=PTS-STARTPTS,"
+            f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+            f"adelay={int(as_['start_ms'])}|{int(as_['start_ms'])}:all=1[{lbl}]"
+        )
         alabs.append(f"[{lbl}]")
 
-    fb.add(f"[{silence_idx}:a]"
-           f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[silence]")
+    fb.add(
+        f"[{silence_idx}:a]"
+        f"aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[silence]"
+    )
     alabs.append("[silence]")
-    fb.add(f"{''.join(alabs)}amix=inputs={len(alabs)}:duration=longest:dropout_transition=0[outa]")
+    fb.add(
+        f"{''.join(alabs)}amix=inputs={len(alabs)}:duration=longest:dropout_transition=0[outa]"
+    )
 
     cmd += [
-        "-filter_complex", fb.build(),
-        "-map", "[vout]", "-map", "[outa]",
+        "-filter_complex",
+        fb.build(),
+        "-map",
+        "[vout]",
+        "-map",
+        "[outa]",
         # "-c:v", "libx264", "-preset", cfg.video_preset, "-crf", str(cfg.crf),
         *_video_encoder_args(cfg),
-        "-c:a", "aac", "-b:a", cfg.audio_bitrate,
-        "-movflags", "+faststart", "-avoid_negative_ts", "make_zero",
+        "-c:a",
+        "aac",
+        "-b:a",
+        cfg.audio_bitrate,
+        "-movflags",
+        "+faststart",
+        "-avoid_negative_ts",
+        "make_zero",
         str(output_video),
     ]
 
@@ -1099,6 +1250,7 @@ def render_video_from_timeline(
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main processing pipeline
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def process_recording(
     tools: ToolManager,
@@ -1131,12 +1283,17 @@ def process_recording(
 # Entry point
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def _print_rgb_banner(text: str) -> None:
     """Print the banner text cycling through rainbow colors."""
     colors = [Fore.RED, Fore.YELLOW, Fore.GREEN, Fore.CYAN, Fore.BLUE, Fore.MAGENTA]
     for i, line in enumerate(text.splitlines()):
         color = colors[i % len(colors)]
-        print(color + line.center(shutil.get_terminal_size((80, 24)).columns) + Style.RESET_ALL)
+        print(
+            color
+            + line.center(shutil.get_terminal_size((80, 24)).columns)
+            + Style.RESET_ALL
+        )
         time.sleep(0.08)  # gentle animation
 
 
@@ -1152,19 +1309,32 @@ if __name__ == "__main__":
           %(prog)s --output my_class.mp4 "https://..."
         """),
     )
-    parser.add_argument("url", nargs="?", default=None,
-                        help="Full class URL (with ?session= is best). "
-                             "If omitted, you will be prompted.")
-    parser.add_argument("--output", "-o", default=None,
-                        help="Output MP4 filename (default: Class-<id>.mp4)")
-    parser.add_argument("--cookie",
-                        help="BREEZESESSION value or full cookie string")
-    parser.add_argument("--xml-only", action="store_true",
-                        help="Only generate timeline.xml, don't render video")
-    parser.add_argument("--crf", type=int, default=30,
-                        help="Video quality (CRF, lower=better, default 30)")
-    parser.add_argument("--fps", type=int, default=30,
-                        help="Output frame rate")
+    parser.add_argument(
+        "url",
+        nargs="?",
+        default=None,
+        help="Full class URL (with ?session= is best). "
+        "If omitted, you will be prompted.",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default=None,
+        help="Output MP4 filename (default: Class-<id>.mp4)",
+    )
+    parser.add_argument("--cookie", help="BREEZESESSION value or full cookie string")
+    parser.add_argument(
+        "--xml-only",
+        action="store_true",
+        help="Only generate timeline.xml, don't render video",
+    )
+    parser.add_argument(
+        "--crf",
+        type=int,
+        default=30,
+        help="Video quality (CRF, lower=better, default 30)",
+    )
+    parser.add_argument("--fps", type=int, default=30, help="Output frame rate")
 
     args, unknown = parser.parse_known_args()
     # Filter out Jupyter/IPython connection file flag
@@ -1196,8 +1366,10 @@ if __name__ == "__main__":
         banner_text = "VCD - v0.2"
     _print_rgb_banner(banner_text)
 
-    desc = ("v0.2 — HTTP‑native login. "
-            "Screenshare + audio classes. Whiteboard/file support: coming soo..")
+    desc = (
+        "v0.2 — HTTP‑native login. "
+        "Screenshare + audio classes. Whiteboard/file support: coming soo.."
+    )
     print(Style.DIM + Fore.CYAN + desc.center(tw) + Style.RESET_ALL)
     print()
 
@@ -1206,11 +1378,15 @@ if __name__ == "__main__":
         if args.url:
             log(f"Ignoring non-URL argument: {args.url}", "WARN")
         print()
-        print(Fore.LIGHTMAGENTA_EX
-              + "Enter class URL (full URL with ?session= is best):",
-              flush=True)
-        print("  e.g. https://vadavc32.ec.iau.ir/lasqwynd9xye/"
-              "?session=adminbreezcdu7pad2xwpfe39a&proto=true", flush=True)
+        print(
+            Fore.LIGHTMAGENTA_EX + "Enter class URL (full URL with ?session= is best):",
+            flush=True,
+        )
+        print(
+            "  e.g. https://vadavc32.ec.iau.ir/lasqwynd9xye/"
+            "?session=adminbreezcdu7pad2xwpfe39a&proto=true",
+            flush=True,
+        )
         print("  or just: https://vadavc32.ec.iau.ir/lasqwynd9xye", flush=True)
         args.url = input("> " + Style.RESET_ALL).strip()
         args.url = args.url.strip()
@@ -1219,7 +1395,8 @@ if __name__ == "__main__":
             sys.exit(1)
         # remove any accidentally pasted control characters
         import re
-        args.url = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', args.url)
+
+        args.url = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", args.url)
         if not args.url.startswith(("http://", "https://")):
             log("ERROR: The provided URL does not look like a web address.", "ERROR")
             sys.exit(1)
@@ -1262,8 +1439,9 @@ if __name__ == "__main__":
     render_cfg = RenderConfig(crf=args.crf, fps=args.fps)
 
     try:
-        process_recording(tools, str(result_dir), output_file,
-                          args.xml_only, render_cfg)
+        process_recording(
+            tools, str(result_dir), output_file, args.xml_only, render_cfg
+        )
     except (MediaProcessingError, FileNotFoundError) as exc:
         log(str(exc), "ERROR")
         sys.exit(1)
