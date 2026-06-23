@@ -1,35 +1,33 @@
 import argparse
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
 import platform
-import random
 import re
 import shutil
 import subprocess
 import sys
 import textwrap
 import time
-from typing import Callable, Optional
-from urllib.parse import parse_qs, urlparse
+from typing import Optional
+from urllib.parse import urlparse
 from xml.dom import minidom
 import xml.etree.ElementTree as ET
-import zipfile
 
 from colorama import Fore, Style, init as colorama_init
-import requests
 from tqdm import tqdm
-
 import urllib3
-from vcd.core.auth import _login_via_manual_cookie, _make_session
+
 from vcd.core.exceptions import (
     AuthenticationError,
     DownloadError,
     MediaProcessingError,
     ToolNotFoundError,
 )
+from vcd.core.logging import log
+from vcd.core.network import DownloadConfig
+from vcd.core.network import download_and_extract
 
 
 colorama_init(autoreset=True)
@@ -60,47 +58,6 @@ class RenderConfig:
     audio_bitrate: str = "92k"
     padding_ms: int = 2000
     gpu: str = "cpu"  # "cpu" | "nvidia" | "amd" | "intel"
-
-
-@dataclass
-class DownloadConfig:
-    verify_ssl: bool = False
-    chunk_size: int = 8192
-    timeout: int = 60
-    headers: dict = field(
-        default_factory=lambda: {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "fa,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Logging
-# ═══════════════════════════════════════════════════════════════════════════════
-
-LEVEL_COLORS = {
-    "INFO": Fore.GREEN,
-    "WARN": Fore.YELLOW,
-    "ERROR": Fore.RED,
-    "SUCCESS": Fore.CYAN,
-    "STEP": Fore.MAGENTA,
-    "DEBUG": Fore.WHITE,
-}
-
-
-def log(msg: str, level: str = "INFO") -> None:
-    now = datetime.now().strftime("%H:%M:%S")
-    color = LEVEL_COLORS.get(level, Fore.WHITE)
-    print(
-        f"{Style.DIM}[{now}]{Style.RESET_ALL} {color}{level:7s}{Style.RESET_ALL} {msg}",
-        flush=True,
-    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -264,252 +221,6 @@ def execute_ffmpeg(
     if proc.returncode != 0:
         raise MediaProcessingError(f"ffmpeg exited with code {proc.returncode}")
     log("FFmpeg finished successfully.", "SUCCESS")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Retry helper for iranian networks:(
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-def retry(
-    max_retries: int = 3,
-    backoff_factor: float = 2.0,
-    exceptions: tuple = (requests.RequestException,),
-) -> Callable:
-    """Decorator: retry a network call with exponential backoff."""
-
-    def decorator(func: Callable) -> Callable:
-        def wrapper(*args, **kwargs):
-            last_exc = None
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except exceptions as exc:
-                    last_exc = exc
-                    if attempt < max_retries - 1:
-                        delay = backoff_factor**attempt + random.uniform(0, 1)
-                        log(
-                            f"Retry {attempt + 1}/{max_retries} after {delay:.1f}s – {exc}",
-                            "WARN",
-                        )
-                        time.sleep(delay)
-            raise DownloadError(
-                f"Network request failed after {max_retries} attempts: {last_exc}"
-            )
-
-        return wrapper
-
-    return decorator
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Download helpers
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-def _build_zip_url(meeting_url: str) -> tuple[str, str]:
-    parsed = urlparse(meeting_url)
-    rid = parsed.path.rstrip("/").split("/")[-1]
-    if not rid:
-        raise ValueError("Cannot extract recording ID from the URL.")
-    base = f"{parsed.scheme}://{parsed.netloc}"
-    return f"{base}/{rid}/output/{rid}.zip?download=zip", rid
-
-
-def _extract_session_from_url(meeting_url: str) -> Optional[str]:
-    """If the URL contains a ?session= parameter, return it."""
-    parsed = urlparse(meeting_url)
-    params = parse_qs(parsed.query)
-    token = params.get("session", [None])[0]
-    if token:
-        log(f"Session token found in URL: {token[:8]}…", "INFO")
-    return token
-
-
-def _looks_like_zip(resp: requests.Response) -> bool:
-    """Quick sanity check before saving the file."""
-    if resp.status_code != 200:
-        log(f"HTTP {resp.status_code} — server refused the request.", "WARN")
-        return False
-
-    ct = resp.headers.get("Content-Type", "").lower()
-    if "text/html" in ct:
-        log("Server returned HTML – probably a login page or error.", "WARN")
-        return False
-
-    cl = int(resp.headers.get("Content-Length", 0))
-    if cl > 0 and cl < 60_000:
-        log(f"Content-Length ({cl} bytes) is too small for a real class ZIP.", "WARN")
-        return False
-
-    return True
-
-
-@retry(max_retries=3, backoff_factor=2.0)
-def _stream_to_file(resp: requests.Response, dest: Path, cfg: DownloadConfig) -> None:
-    """Download the response body to a file with a progress bar."""
-    global _current_response
-    _current_response = resp
-    total = int(resp.headers.get("content-length", 0))
-    try:
-        with open(dest, "wb") as fh:
-            with tqdm(
-                total=total or None,
-                unit="B",
-                unit_scale=True,
-                desc=f"↓ {dest.name}",
-                colour="#00ff00",
-            ) as pbar:
-                for chunk in resp.iter_content(cfg.chunk_size):
-                    if not chunk:
-                        continue
-                    fh.write(chunk)
-                    pbar.update(len(chunk))
-    finally:
-        _current_response = None  # always clear on exit, success or not
-
-
-def _try_extract(zip_path: Path, target_dir: Path) -> bool:
-    """Extract the ZIP and delete it. Return False if archive is invalid."""
-    try:
-        target_dir.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(zip_path, "r") as arc:
-            arc.extractall(target_dir)
-        zip_path.unlink(missing_ok=True)
-        log(f"Extracted to '{target_dir}'.", "SUCCESS")
-        return True
-    except (zipfile.BadZipFile, OSError) as exc:
-        log(f"ZIP extraction failed: {exc}", "WARN")
-        zip_path.unlink(missing_ok=True)
-        return False
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Login orchestrator – tries everything in a sensible order
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-def acquire_authenticated_session(
-    meeting_url: str,
-    cfg: DownloadConfig,
-    manual_cookie: Optional[str] = None,
-) -> requests.Session:
-    """
-    Return an authenticated session, or raise AuthenticationError.
-    Order: 0. session token from URL → 1. manual cookie (if given) → 2. browser cookies.
-    """
-    zip_url, _ = _build_zip_url(meeting_url)
-
-    # 0 – ?session= in URL
-    token = _extract_session_from_url(meeting_url)
-    if token:
-        log("[Auth-0] Trying session token from URL…", "STEP")
-        s = _make_session(cfg)
-        s.cookies.set("BREEZESESSION", token)
-        try:
-            r = s.get(zip_url, stream=True, timeout=cfg.timeout)
-            if _looks_like_zip(r):
-                log("[Auth-0] ✅ Session token valid!", "SUCCESS")
-                r.close()
-                return s
-            log("[Auth-0] Token rejected – it may have expired.", "WARN")
-        except requests.RequestException as exc:
-            log(f"[Auth-0] Network error: {exc}", "WARN")
-
-    # 1 – manual cookie
-    if manual_cookie:
-        log("[Auth-1] Trying manual cookie from command line…", "STEP")
-        s = _make_session(cfg)
-        if "=" in manual_cookie:
-            s.headers["Cookie"] = manual_cookie
-        else:
-            for name in ["BREEZESESSION", "breeze_session"]:
-                s.cookies.set(name, manual_cookie)
-        try:
-            r = s.get(zip_url, stream=True, timeout=cfg.timeout)
-            if _looks_like_zip(r):
-                log("[Auth-1] ✅ Manual cookie accepted.", "SUCCESS")
-                r.close()
-                return s
-            log("[Auth-1] Manual cookie rejected.", "WARN")
-        except requests.RequestException as exc:
-            log(f"[Auth-1] Network error: {exc}", "WARN")
-
-    # 2 – interactive cookie paste (fallback)
-    log("[Auth-2] Falling back to interactive cookie paste…", "STEP")
-    s = _login_via_manual_cookie(cfg, urlparse(meeting_url).netloc)
-    if s is not None:
-        try:
-            r = s.get(zip_url, stream=True, timeout=cfg.timeout)
-            if _looks_like_zip(r):
-                log("[Auth-2] ✅ Interactive cookie works!", "SUCCESS")
-                r.close()
-                return s
-            log("[Auth-2] Cookie accepted but doesn't grant ZIP access.", "WARN")
-        except requests.RequestException as exc:
-            log(f"[Auth-2] Network error: {exc}", "WARN")
-
-    raise AuthenticationError(
-        "Could not authenticate.\n"
-        "  • Make sure you are logged in to the correct Vadana server.\n"
-        "  • Copy your BREEZESESSION cookie manually (see instructions above).\n"
-        "  • Use the --cookie flag to pass it directly, e.g. --cookie abc123..."
-    )
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Download orchestrator
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-def download_and_extract(
-    meeting_url: str,
-    target_dir: str,
-    cfg: DownloadConfig = DownloadConfig(),
-    manual_cookie: Optional[str] = None,
-) -> Path:
-    """
-    Authenticate, download the ZIP, extract it.
-    Returns the extraction directory Path.
-    """
-    zip_url, recording_id = _build_zip_url(meeting_url)
-    zip_path = Path(f"{recording_id}_dl.zip")
-    extract_dir = Path(target_dir)
-
-    log(f"ZIP URL: {zip_url}")
-
-    session = acquire_authenticated_session(meeting_url, cfg, manual_cookie)
-
-    log("Verifying download access…")
-    try:
-        resp = session.get(zip_url, stream=True, timeout=cfg.timeout)
-    except requests.RequestException as exc:
-        raise DownloadError(f"Cannot reach download server: {exc}")
-
-    if not _looks_like_zip(resp):
-        raise DownloadError(
-            "The server did not return a valid ZIP.\n"
-            "  • Your session may have expired.\n"
-            "  • The class may belong to a different account.\n"
-            "  • Re‑run with a fresh BREEZESESSION cookie."
-        )
-
-    _stream_to_file(resp, zip_path, cfg)
-
-    if not _try_extract(zip_path, extract_dir):
-        # remove the empty folder _try_extract created so next run re-downloads cleanly
-        try:
-            if extract_dir.exists() and not any(extract_dir.iterdir()):
-                extract_dir.rmdir()
-        except Exception:
-            pass
-        raise DownloadError(
-            "Downloaded file is not a valid ZIP archive.\n"
-            "  • The server might have sent a login page instead.\n"
-            "  • Try again with a correct session cookie."
-        )
-
-    return extract_dir
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -1,11 +1,18 @@
 # Authentication
 from typing import Optional
+from urllib.parse import urlparse
 
 from colorama import Fore, Style
 import requests
 
-from vcd.core.network import DownloadConfig
+from vcd.core.exceptions import AuthenticationError
 from vcd.core.logging import log
+from vcd.core.network import (
+    DownloadConfig,
+    _build_zip_url,
+    _extract_session_from_url,
+    _looks_like_zip,
+)
 
 
 def _make_session(cfg: DownloadConfig) -> requests.Session:
@@ -55,3 +62,72 @@ def _login_via_manual_cookie(
     for name in ac_names:
         session.cookies.set(name, raw)
     return session
+
+
+# Login orchestrator
+def acquire_authenticated_session(
+    meeting_url: str,
+    cfg: DownloadConfig,
+    manual_cookie: Optional[str] = None,
+) -> requests.Session:
+    """
+    Return an authenticated session, or raise AuthenticationError.
+    Order: 0. session token from URL → 1. manual cookie (if given) → 2. browser cookies.
+    """
+    zip_url, _ = _build_zip_url(meeting_url)
+
+    # 0 – ?session= in URL
+    token = _extract_session_from_url(meeting_url)
+    if token:
+        log("[Auth-0] Trying session token from URL…", "STEP")
+        s = _make_session(cfg)
+        s.cookies.set("BREEZESESSION", token)
+        try:
+            r = s.get(zip_url, stream=True, timeout=cfg.timeout)
+            if _looks_like_zip(r):
+                log("[Auth-0] ✅ Session token valid!", "SUCCESS")
+                r.close()
+                return s
+            log("[Auth-0] Token rejected – it may have expired.", "WARN")
+        except requests.RequestException as exc:
+            log(f"[Auth-0] Network error: {exc}", "WARN")
+
+    # 1 – manual cookie
+    if manual_cookie:
+        log("[Auth-1] Trying manual cookie from command line…", "STEP")
+        s = _make_session(cfg)
+        if "=" in manual_cookie:
+            s.headers["Cookie"] = manual_cookie
+        else:
+            for name in ["BREEZESESSION", "breeze_session"]:
+                s.cookies.set(name, manual_cookie)
+        try:
+            r = s.get(zip_url, stream=True, timeout=cfg.timeout)
+            if _looks_like_zip(r):
+                log("[Auth-1] ✅ Manual cookie accepted.", "SUCCESS")
+                r.close()
+                return s
+            log("[Auth-1] Manual cookie rejected.", "WARN")
+        except requests.RequestException as exc:
+            log(f"[Auth-1] Network error: {exc}", "WARN")
+
+    # 2 – interactive cookie paste (fallback)
+    log("[Auth-2] Falling back to interactive cookie paste…", "STEP")
+    s = _login_via_manual_cookie(cfg, urlparse(meeting_url).netloc)
+    if s is not None:
+        try:
+            r = s.get(zip_url, stream=True, timeout=cfg.timeout)
+            if _looks_like_zip(r):
+                log("[Auth-2] ✅ Interactive cookie works!", "SUCCESS")
+                r.close()
+                return s
+            log("[Auth-2] Cookie accepted but doesn't grant ZIP access.", "WARN")
+        except requests.RequestException as exc:
+            log(f"[Auth-2] Network error: {exc}", "WARN")
+
+    raise AuthenticationError(
+        "Could not authenticate.\n"
+        "  • Make sure you are logged in to the correct Vadana server.\n"
+        "  • Copy your BREEZESESSION cookie manually (see instructions above).\n"
+        "  • Use the --cookie flag to pass it directly, e.g. --cookie abc123..."
+    )
