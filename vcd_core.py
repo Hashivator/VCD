@@ -1,36 +1,36 @@
-import subprocess
-import shutil
-import json
-import sys
-import os
-import platform
-import textwrap
-import re
-import time
-import getpass
 import argparse
 from dataclasses import dataclass, field
-from pathlib import Path
-from urllib.parse import urlparse, urljoin, urlencode, parse_qs
 from datetime import datetime
-import xml.etree.ElementTree as ET
-from xml.dom import minidom
-import zipfile
-from typing import Optional, Callable
-
-# ── third-party ───────────────────────────────────────────────────────────────
-import requests
-import urllib3
-from tqdm import tqdm
-from colorama import init as colorama_init, Fore, Style
+import json
+import os
+from pathlib import Path
+import platform
 import random
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+import time
+from typing import Callable, Optional
+from urllib.parse import parse_qs, urlparse
+from xml.dom import minidom
+import xml.etree.ElementTree as ET
+import zipfile
 
+from colorama import Fore, Style, init as colorama_init
+import requests
+from tqdm import tqdm
+
+import urllib3
+from vcd.core.auth import _login_via_manual_cookie, _make_session
 from vcd.core.exceptions import (
-    ToolNotFoundError,
     AuthenticationError,
     DownloadError,
     MediaProcessingError,
+    ToolNotFoundError,
 )
+
 
 colorama_init(autoreset=True)
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -39,20 +39,6 @@ try:
     from pyfiglet import Figlet
 except ImportError:
     Figlet = None
-
-try:
-    from bs4 import BeautifulSoup
-
-    BS4_AVAILABLE = True
-except ImportError:
-    BS4_AVAILABLE = False
-
-try:
-    import browser_cookie3
-
-    BROWSER_COOKIE3_AVAILABLE = True
-except ImportError:
-    BROWSER_COOKIE3_AVAILABLE = False
 
 # holds the currently-running ffmpeg subprocess so GUI can kill it on stop
 _current_proc: "Optional[subprocess.Popen]" = None
@@ -396,263 +382,6 @@ def _try_extract(zip_path: Path, target_dir: Path) -> bool:
         log(f"ZIP extraction failed: {exc}", "WARN")
         zip_path.unlink(missing_ok=True)
         return False
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-#  Authentication
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-def _make_session(cfg: DownloadConfig) -> requests.Session:
-    s = requests.Session()
-    s.headers.update(cfg.headers)
-    s.verify = cfg.verify_ssl
-    return s
-
-
-# ── Method A – Adobe Connect XML API login ────────────────────────────────────
-
-
-def _login_via_ac_api(
-    base_url: str, username: str, password: str, cfg: DownloadConfig
-) -> Optional[requests.Session]:
-    """
-    Use the official Adobe Connect XML API.
-    Returns an authenticated session or None.
-    """
-    api_url = f"{base_url}/api/xml"
-    session = _make_session(cfg)
-
-    # Some servers want a "common-info" call first to set an initial cookie
-    try:
-        session.get(f"{api_url}?action=common-info", timeout=cfg.timeout)
-    except requests.RequestException:
-        pass
-
-    params = {"action": "login", "login": username, "password": password}
-    try:
-        resp = session.get(api_url, params=params, timeout=cfg.timeout)
-    except requests.RequestException as exc:
-        log(f"[Auth-API] Network error: {exc}", "WARN")
-        return None
-
-    try:
-        root = ET.fromstring(resp.text)
-        status = root.find(".//status")
-        if status is None:
-            log("[Auth-API] Unexpected XML response.", "WARN")
-            return None
-        code = status.get("code", "")
-        if code == "ok":
-            log("[Auth-API] Login successful via XML API.", "SUCCESS")
-            return session
-        sub = status.get("subcode", "")
-        detail = status.get("detail", "")
-        log(f"[Auth-API] Login rejected: code={code} sub={sub} detail={detail}", "WARN")
-        return None
-    except ET.ParseError:
-        log(
-            "[Auth-API] Response is not XML – server may not support this endpoint.",
-            "WARN",
-        )
-        return None
-
-
-# ── Method B – HTML form login ────────────────────────────────────────────────
-
-
-def _scrape_form_fields(html: str) -> dict[str, str]:
-    """Extract all hidden/visible input names and default values."""
-    fields: dict[str, str] = {}
-    if BS4_AVAILABLE:
-        soup = BeautifulSoup(html, "html.parser")
-        form = soup.find("form")
-        if form:
-            for inp in form.find_all("input"):
-                name = inp.get("name")
-                value = inp.get("value", "")
-                itype = inp.get("type", "text").lower()
-                if name and itype in ("hidden", "text", "email"):
-                    fields[name] = value
-    else:
-        # Simple regex fallback
-        for m in re.finditer(
-            r'<input[^>]+name=["\']([^"\']+)["\'][^>]*value=["\']([^"\']*)["\']',
-            html,
-            re.I,
-        ):
-            fields[m.group(1)] = m.group(2)
-        for m in re.finditer(
-            r'<input[^>]+value=["\']([^"\']*)["\'][^>]*name=["\']([^"\']+)["\']',
-            html,
-            re.I,
-        ):
-            fields[m.group(2)] = m.group(1)
-    return fields
-
-
-def _find_form_action(html: str, page_url: str) -> str:
-    m = re.search(r'<form[^>]+action=["\']([^"\']+)["\']', html, re.I)
-    return urljoin(page_url, m.group(1)) if m else page_url
-
-
-def _login_via_html_form(
-    login_page_url: str, username: str, password: str, cfg: DownloadConfig
-) -> Optional[requests.Session]:
-    """
-    1. GET the login page.
-    2. Parse the form.
-    3. POST credentials.
-    Returns session on success, None otherwise.
-    """
-    session = _make_session(cfg)
-    log(f"[Auth-Form] Fetching login page: {login_page_url}")
-    try:
-        get_resp = session.get(login_page_url, timeout=cfg.timeout)
-    except requests.RequestException as exc:
-        log(f"[Auth-Form] Cannot reach login page: {exc}", "WARN")
-        return None
-
-    html = get_resp.text
-    form_action = _find_form_action(html, login_page_url)
-    fields = _scrape_form_fields(html)
-
-    # Possible field names for username / password
-    username_keys = ["username", "login", "email", "user", "loginname", "j_username"]
-    password_keys = ["password", "pass", "passwd", "j_password", "loginpassword"]
-
-    found_user = next((k for k in username_keys if k in fields), None)
-    found_pass = next((k for k in password_keys if k in fields), None)
-
-    fields[found_user or "username"] = username
-    fields[found_pass or "password"] = password
-
-    log(f"[Auth-Form] POSTing to: {form_action}")
-    # Hide password value in log
-    safe_fields = {k: ("***" if "pass" in k.lower() else v) for k, v in fields.items()}
-    log(f"[Auth-Form] Fields: {safe_fields}")
-
-    try:
-        post_resp = session.post(
-            form_action,
-            data=fields,
-            timeout=cfg.timeout,
-            allow_redirects=True,
-        )
-    except requests.RequestException as exc:
-        log(f"[Auth-Form] POST failed: {exc}", "WARN")
-        return None
-
-    final_url = post_resp.url
-    body_lower = post_resp.text.lower()
-
-    failed_signals = [
-        "invalid password",
-        "wrong password",
-        "login failed",
-        "نام کاربری",
-        "رمز",
-        "incorrect",
-        "خطا در ورود",
-        "authentication failed",
-    ]
-    if any(sig in body_lower for sig in failed_signals):
-        log(
-            "[Auth-Form] Login appears to have failed (error text in response).", "WARN"
-        )
-        return None
-
-    if "login" in final_url.lower() and "logout" not in body_lower:
-        log(
-            "[Auth-Form] Still on login page after POST – credentials may be wrong.",
-            "WARN",
-        )
-        return None
-
-    log("[Auth-Form] Form login appears successful.", "SUCCESS")
-    return session
-
-
-# ── Method C – Manual cookie paste  ─────────────────────────────────
-
-
-def _login_via_manual_cookie(
-    cfg: DownloadConfig, server_domain: str
-) -> Optional[requests.Session]:
-    """
-    Ask the user to paste a cookie string (whole header or bare value).
-    Returns a session with that cookie set.
-    """
-    print()
-    print(Fore.YELLOW + "━" * 72)
-    print(Fore.YELLOW + "  Manual Cookie – quick guide:")
-    print(Fore.YELLOW + "━" * 72)
-    print(f"""
-  1. Log in to Vadana in your browser and open the class page.
-  2. Press F12 → Network tab → reload the page (Ctrl+R).
-  3. Click any request to {server_domain}.
-  4. In "Request Headers", find the "Cookie:" line.
-  5. Copy the entire value after "Cookie: " (or just the BREEZESESSION token).
-  6. Paste it below.
-
-  ⭐ Easier: If your class link has ?session=…, just pass that URL directly.
-""")
-    raw = input(
-        Fore.LIGHTMAGENTA_EX + "  Paste Cookie value: " + Style.RESET_ALL
-    ).strip()
-    if not raw:
-        return None
-
-    session = _make_session(cfg)
-
-    if "=" in raw:
-        session.headers["Cookie"] = raw
-        log("[Auth-Cookie] Using provided cookie string as-is.")
-        return session
-
-    # Bare token – try common Adobe Connect cookie names
-    ac_names = ["BREEZESESSION", "breeze_session", "session", "JSESSIONID", "PHPSESSID"]
-    log(f"[Auth-Cookie] Bare token – trying names: {ac_names}", "WARN")
-    for name in ac_names:
-        session.cookies.set(name, raw)
-    return session
-
-
-# ── Method D – browser_cookie3 (optional) ─────────────────────────────────────
-
-
-def _login_via_browser_cookies(
-    domain: str, cfg: DownloadConfig
-) -> Optional[requests.Session]:
-    if not BROWSER_COOKIE3_AVAILABLE:
-        return None
-
-    log("[Auth-Browser] Trying to extract cookies from installed browsers…")
-    browsers = []
-    try:
-        browsers.append(("Firefox", browser_cookie3.firefox))
-    except Exception:
-        pass
-    try:
-        browsers.append(("Edge", browser_cookie3.edge))
-    except Exception:
-        pass
-    try:
-        browsers.append(("Chrome", browser_cookie3.chrome))
-    except Exception:
-        pass
-
-    for name, loader in browsers:
-        try:
-            jar = loader(domain_name=domain)
-            session = _make_session(cfg)
-            session.cookies.update(jar)
-            log(f"[Auth-Browser] Loaded cookies from {name}.")
-            return session
-        except Exception as exc:
-            log(f"[Auth-Browser] {name}: {exc}", "WARN")
-
-    return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
