@@ -1,299 +1,452 @@
 <h1 align="center">
   <br>
-  <a href="https://github.com/IAUCourseExp/VCD"><img src="https://raw.githubusercontent.com/IAUCourseExp/VCD/main/vcd0.3.png" alt="VCD" width="3000"></a>
+  <a href="https://github.com/IAUCourseExp/VCD">
+    <img src="https://raw.githubusercontent.com/IAUCourseExp/VCD/main/vcd0.4.png" alt="VCD – Vadana Class Downloader" width="900">
+  </a>
   <br>
   VCD – Vadana Class Downloader
   <br>
 </h1>
 
-<h4 align="center">Download & merge <b>Adobe Connect (Vadana (Azad University Online Classes))</b> recordings into a single synced MP4 – w/ some authentication methods.</h4>
-
 <p align="center">
-  <a href="https://github.com/IAUCourseExp/VCD/releases/latest"><img src="https://img.shields.io/github/v/release/IAUCourseExp/VCD?style=flat-square" alt="Release"></a>
-  <a href="https://github.com/IAUCourseExp/VCD/blob/main/LICENSE"><img src="https://img.shields.io/github/license/IAUCourseExp/VCD?style=flat-square" alt="License"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8%2B-blue?style=flat-square" alt="Python"></a>
-  <a href="https://github.com/IAUCourseExp/VCD/stargazers"><img src="https://img.shields.io/github/stars/IAUCourseExp/VCD?style=flat-square" alt="Stars"></a>
-  <br>
-  <a href="https://github.com/IAUCourseExp/VCD/issues"><img src="https://img.shields.io/github/issues/IAUCourseExp/VCD?style=flat-square" alt="Issues"></a>
-  <a href="https://github.com/IAUCourseExp/VCD/network/members"><img src="https://img.shields.io/github/forks/IAUCourseExp/VCD?style=flat-square" alt="Forks"></a>
+  Download, sync, and render Adobe Connect (Vadana) class recordings into a single MP4.<br>
+  Screenshare + audio &nbsp;·&nbsp; GPU-accelerated &nbsp;·&nbsp; Audio-only export &nbsp;·&nbsp; Batch queue
 </p>
 
 <p align="center">
-  <a href="#-key-features">Features</a> •
-  <a href="#-requirements">Requirements</a> •
-  <a href="#-installation">Installation</a> •
-  <a href="#-usage">Usage</a> •
-  <a href="#-how-it-works-briefly">How It Works</a> •
-  <a href="#-output">Output</a> •
-  <a href="#-troubleshooting">Troubleshooting</a> •
-  <a href="#-changelog">Changelog</a> •
-  <a href="#-contributing">Contributing</a>
+  <a href="https://github.com/IAUCourseExp/VCD/releases/latest">
+    <img src="https://img.shields.io/github/v/release/IAUCourseExp/VCD?style=flat-square&label=release" alt="Release">
+  </a>
+  <a href="https://www.python.org/downloads/">
+    <img src="https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square" alt="Python">
+  </a>
+  <a href="https://github.com/IAUCourseExp/VCD/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/IAUCourseExp/VCD?style=flat-square" alt="License">
+  </a>
+  <a href="https://github.com/IAUCourseExp/VCD/stargazers">
+    <img src="https://img.shields.io/github/stars/IAUCourseExp/VCD?style=flat-square" alt="Stars">
+  </a>
+  <a href="https://github.com/IAUCourseExp/VCD/issues">
+    <img src="https://img.shields.io/github/issues/IAUCourseExp/VCD?style=flat-square" alt="Issues">
+  </a>
+  <a href="https://github.com/IAUCourseExp/VCD/network/members">
+    <img src="https://img.shields.io/github/forks/IAUCourseExp/VCD?style=flat-square" alt="Forks">
+  </a>
+</p>
+
+<p align="center">
+  <a href="#overview">Overview</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#requirements">Requirements</a> ·
+  <a href="#installation">Installation</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#how-it-works">How It Works</a> ·
+  <a href="#output">Output</a> ·
+  <a href="#troubleshooting">Troubleshooting</a> ·
+  <a href="#changelog">Changelog</a>
+</p>
+
+<p align="center">
+  <a href="https://t.me/IAUCourseExp">@IAUCourseExp</a>
+  &nbsp;·&nbsp;
+  <a href="https://t.me/JozveIAU">@JozveIAU</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/IAUCourseExp/VCD">⭐ Star this project ⭐</a>
 </p>
 
 ---
 
-## ✨ Key Features
+## Overview
 
-## GUI — v0.3 features (June 22nd 2026)
+IAU Azad University's Vadana platform is built on Adobe Connect. Class recordings are stored as a ZIP archive of FLV video segments and XML timing files — not a single watchable video. Reconstructing those pieces into one correctly-synchronised MP4, with screenshare overlaid on audio and all timing offsets precisely applied, is what VCD does.
 
-**Download & encode**
-- Quality presets: Ultra (1080p) / High (720p) / Balanced (720p) / Compact (480p) / Custom
-- GPU encode selector — NVIDIA, AMD, Intel, or CPU; auto-detected and defaulted at startup
-- Advanced settings: resolution, FPS, CRF, audio bitrate, x264 preset, tail padding
+The tool covers the full pipeline: authentication, download with resume support, millisecond-accurate timeline extraction from Adobe Connect's internal `pacingTick` format, and FFmpeg rendering with hardware GPU acceleration and an audio-only fast path.
 
-**Workflow**
-- Batch queue — queue multiple class URLs, run them one after another automatically
-- Instant stop — kills FFmpeg and closes the download socket immediately; no waiting
-- Auto-retry — retries failed jobs up to 3× with increasing delay
-- Disk space check — warns before starting if output folder has < 500 MB free
+**Two files, one job:**
 
-**History & files**
-- Job history — every job is logged persistently to `~/.vcd/history.json`
-- Output files tab — browse rendered videos, preview thumbnail, play, open folder, delete
+| File | Role |
+|------|------|
+| `vcd_core.py` | Download and render engine — runs standalone as a CLI |
+| `vcd_gui.py` | PySide6 desktop GUI — wraps core without modifying its logic |
 
-**Live feedback**
+---
+
+## Architecture
+
+The codebase has one hard rule: **the GUI never modifies core's logic.** `vcd_gui.py` intercepts `sys.stdout`/`sys.stderr` to capture `core.log()` output and `tqdm` progress bars, converting them into Qt signals that drive UI updates. Core runs in a background `QThread` and knows nothing about the GUI.
+
+### System diagram
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│  vcd_gui.py  —  PySide6 Desktop GUI                              │
+│                                                                   │
+│  MainWindow                                                       │
+│   ├─ BatchQueue          sequential URL processing                │
+│   ├─ JobHistoryDB        ~/.vcd/history.json                      │
+│   ├─ StatsWidget         speed graph · ETA · bytes                │
+│   ├─ TrayManager         system tray + notifications              │
+│   └─ Worker ──────────────────────────────────────────→ QThread   │
+│          │                                                        │
+│          └──→ _StreamRouter                                       │
+│                 hijacks sys.stdout / sys.stderr                   │
+│                 parses log() lines + tqdm bars into signals:      │
+│                 sig_log · sig_progress · sig_speed                │
+│                 sig_eta · sig_bytes · sig_done                    │
+└──────────────────────────┬────────────────────────────────────────┘
+                           │ calls (never modifies)
+┌──────────────────────────▼────────────────────────────────────────┐
+│  vcd_core.py  —  Download & Render Engine                        │
+│                                                                   │
+│  URL                                                              │
+│   └─→ acquire_authenticated_session()                             │
+│          ?session= token → manual cookie → interactive prompt     │
+│   └─→ download_and_extract()                                      │
+│          HTTPS stream · HTTP Range resume · ZIP extraction        │
+│   └─→ collect_media_intervals()                                   │
+│          parse pacingTick XML → millisecond-accurate clip offsets │
+│   └─→ write_timeline_xml()                                        │
+│          serialise for inspection / reuse                         │
+│                                                                   │
+│          ┌──────────────────────────────┐                         │
+│          │  render_video_from_timeline  │──→ Class-<id>.mp4       │
+│          │  FilterGraphBuilder          │   GPU: NVENC/AMF/QSV    │
+│          │  _video_encoder_args()       │   CPU: libx264          │
+│          └──────────────────────────────┘                         │
+│          ┌──────────────────────────────┐                         │
+│          │  export_audio()              │──→ Class-<id>.m4a       │
+│          │  amix · silenceremove        │   audio-only fast path  │
+│          └──────────────────────────────┘                         │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+### Core components
+
+| Component | Responsibility |
+|-----------|---------------|
+| `acquire_authenticated_session()` | Auth chain: URL `?session=` → CLI cookie → interactive prompt |
+| `download_and_extract()` | HTTPS streaming with `Range` header resume; ZIP validation and extraction |
+| `collect_media_intervals()` | Reads `pacingTick` from each XML, computes `start_ms` / `end_ms` per clip against a global base tick |
+| `write_timeline_xml()` | Serialises computed timeline with exact offsets for every segment |
+| `render_video_from_timeline()` | Builds FFmpeg `-filter_complex`: black canvas + video overlays + `amix` |
+| `export_audio()` | Audio-only: `amix normalize=0` + optional `silenceremove` → AAC output |
+| `FilterGraphBuilder` | Constructs filter graph strings segment by segment — no manual string concatenation |
+| `_video_encoder_args()` | Returns encoder-specific CLI args for CPU / NVIDIA NVENC / AMD AMF / Intel QSV |
+| `_current_proc` / `_current_response` | Module-level refs for cross-thread kill: `proc.terminate()` + `resp.close()` |
+
+### GUI threading model
+
+```
+UI Thread                         Worker Thread
+─────────────────────             ─────────────────────────────────
+MainWindow._start()
+  → Worker.run() ───────────────→ sys.stdout = _StreamRouter
+                                  core.init_tools()
+                                  core.download_and_extract()
+                                  core.process_recording()
+                                  sys.stdout = old_stdout
+
+← sig_log(level, msg)           ← _StreamRouter.write() ← core.log()
+← sig_progress(mode, pct)       ← tqdm bar pattern matched
+← sig_speed("2.4 MB/s")         ← speed parsed from tqdm line
+← sig_eta("01:23")              ← remaining time parsed
+← sig_bytes("142 MB", "380 MB") ← bytes parsed from tqdm line
+← sig_done(ok, msg, out_path)   ← emitted at end of Worker.run()
+```
+
+### Stop mechanism
+
+Stopping immediately requires interrupting work across two layers:
+
+| Stage | Method | Effect |
+|-------|--------|--------|
+| Download | `_current_response.close()` | Closes the socket; `iter_content()` raises immediately |
+| FFmpeg render | `_current_proc.terminate()` | SIGTERM to the running ffmpeg process |
+
+Both calls happen in `Worker.cancel()`, triggered by `_stop()` on the UI thread.
+
+---
+
+## Features
+
+### Current — v0.4
+
+#### Download
+
+- HTTP `Range` header resume — continues a partial download from the byte offset on disk
+- Instant stop — closes socket and kills FFmpeg without waiting for the current stage to finish
+- Auto-retry on failure, up to 3× with increasing delay
+- Disk space check before starting
+
+#### Render
+
+- GPU encoding: **NVIDIA NVENC**, **AMD AMF**, **Intel QSV** — detected at launch, auto-selected, validated against your FFmpeg build
+- Header chip shows detected GPU hardware; selecting an unavailable encoder shows an error and reverts the choice
+- CPU fallback (`libx264`) always available
+- Volume fix: `amix normalize=0` (prior versions halved audio volume when mixed with the silence padding track)
+
+#### Audio export
+
+- Audio-only mode — exports `.m4a` without any video processing, 10–20× faster
+- Silence trimming — removes gaps longer than 1.5 s via FFmpeg's `silenceremove` filter
+
+#### GUI
+
+- Batch queue — add multiple URLs, process sequentially with automatic continuation
+- Job history — every job logged to `~/.vcd/history.json`, viewable in the History tab
+- Output files tab — thumbnail preview, play, open folder, delete
 - Real-time speed graph with ETA and bytes downloaded
-- Log panel with per-level filter (INFO / STEP / WARN / ERROR) and free-text search
-- System tray — minimize to background, get a desktop notification on finish
+- System tray — minimize to background, desktop notification on finish
+- Log panel — per-level filter (ALL / INFO / STEP / WARN / ERROR) + free-text search
+- Cookie profiles — save and reload multiple BREEZESESSION sessions
+- URL autocomplete — last 30 entries
+- Clipboard URL detection — auto-fills on launch if a class link is copied
+- Custom FFmpeg path — bypass PATH lookup with a specific binary
+- Auto-open output when done
+- Resizable splitter between controls panel and log
 
-**Convenience**
-- Cookie profiles — save and reload multiple named BREEZESESSION presets
-- URL autocomplete — remembers the last 30 URLs
-- Resizable splitter between the controls panel and the log
+#### Keyboard shortcuts
 
-**Keyboard shortcuts**
-
-| Keys | Action |
-|------|--------|
+| Key | Action |
+|-----|--------|
 | `Ctrl+Enter` | Start job |
 | `Esc` | Stop job |
 | `Ctrl+Shift+Q` | Add current URL to batch queue |
-| `Ctrl+L` | Switch to Log tab |
-| `Ctrl+H` | Switch to History tab |
+| `Ctrl+L` | Log tab |
+| `Ctrl+H` | History tab |
 | `Ctrl+F` | Focus log search |
 | `Ctrl+S` | Save log to file |
 | `Ctrl+Q` | Quit |
 
 ---
 
-### 🚀 What’s new in v0.2
+## Requirements
 
-- **🔐 Smart authentication**  
-  *Automatically uses `?session=` tokens from class URLs, manual `BREEZESESSION` cookies, or browser cookies (via `browser_cookie3`).*  
-  *No more manual ZIP downloads!*
+- **Python** 3.10 or newer
+- **FFmpeg + FFprobe** in PATH → [ffmpeg.org](https://ffmpeg.org/download.html)
+- **PySide6** — GUI only
 
-- **📡 Network resilience**  
-  *Automatic retry with exponential backoff for flaky connections – built‑in tolerance for Iranian networks.*
+**GPU encoding** (optional — 3–8× faster rendering):
 
-- **🖥️ Cross‑platform & Jupyter‑friendly**  
-  *Works identically in CMD, VSCode, Jupyter Notebook, IPython – even when the kernel injects extra arguments.*
+| GPU | Encoder | Platform |
+|-----|---------|---------|
+| NVIDIA | `h264_nvenc` | Windows, Linux |
+| AMD | `h264_amf` | Windows |
+| Intel | `h264_qsv` | Windows, Linux |
+| CPU | `libx264` | All (default) |
 
-- **⚙️ Command‑line power**  
-  *Pass the URL, cookie, output filename, CRF, FPS directly via flags. Perfect for scripting and automation.*
-
-- **🎨 Beautiful terminal UX**  
-  *Animated RGB banner, colour‑coded log levels, and clean progress bars.*
-
-- **🧰 Robust error handling**  
-  *Custom exceptions (`AuthenticationError`, `DownloadError`, …) tell you exactly what went wrong and how to fix it.*
-
-- **🧹 Cleaner codebase**  
-  *No global variables; tool paths are managed by a `ToolManager` class. FFmpeg filters use a `FilterGraphBuilder` for readability.*
-
-### 🔧 Existing goodness (from v0.1)
-
-- **Automatic ZIP download & extraction** (with authentication now)
-- **Pacing‑tick alignment** from internal XML files – *true zero‑point synchronisation*
-- **Screenshare + audio** merging into a single MP4
-- **Black‑canvas background** – no stale frames, clean composition
-- **Detailed `timeline.xml`** for inspection or manual editing
-- **Idempotent** – re‑running re‑uses the downloaded folder
+> For GPU support, use the `win64-gpl` build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) — it ships with all three hardware encoders.
 
 ---
 
-## 📋 Requirements
-
-- **Python** `3.8` or newer  
-- **FFmpeg** (with `ffmpeg` and `ffprobe` accessible in your `PATH`)  
-  Download from [ffmpeg.org](https://ffmpeg.org/download.html).
-
----
-
-## 📦 Installation
+## Installation
 
 ```bash
-# Clone the repository
 git clone https://github.com/IAUCourseExp/VCD
 cd VCD
-
-# Install Python dependencies
 pip install -r requirements.txt
 ```
 
-`requirements.txt` contains:
+`requirements.txt`:
 
 ```
 requests
+urllib3
 tqdm
 colorama
-pyfiglet        # optional – for the fancy ASCII banner
-urllib3
-beautifulsoup4  # optional – for HTML form authentication
-browser-cookie3 # optional – for automatic browser cookie extraction
+PySide6              # GUI only — safe to omit for CLI
+pyfiglet             # optional — ASCII banner in CLI
+beautifulsoup4       # optional — HTML form auth fallback
+browser-cookie3      # optional — auto-extract browser cookies
 ```
 
-> ℹ️ The optional packages are not strictly required; the script gracefully degrades if they are missing.
+Optional packages degrade gracefully when missing.
 
 ---
 
-## 🚀 Usage
+## Usage
 
-### Basic interactive mode
-
-Run the script and paste your class URL when prompted:
+### GUI
 
 ```bash
-python VCD.py
+python vcd_gui.py
 ```
 
-You will see the animated banner, then:
+On launch: FFmpeg and FFprobe are located, the best available GPU encoder is auto-detected and selected, and the URL field is auto-filled if a class link is in the clipboard.
 
-```
-Enter class URL (full URL with ?session= is best):
-  e.g. https://vadavc32.ec.iau.ir/lasqwynd9xye/?session=adminbreezcdu7pad2xwpfe39a&proto=true
-  or just: https://vadavc32.ec.iau.ir/lasqwynd9xye
->
-```
+Paste a class URL and click **Download & Render**.  
+For batch processing: **+ Add to Queue** → build a list → **Run Queue**.
 
-### Authentication options
-
-**A) URL with `?session=` – best & easiest**  
-Paste the full link you received from the educational system. The tool extracts the session token automatically.
-
-**B) Command‑line cookie**  
-If you have the `BREEZESESSION` value:
+### CLI
 
 ```bash
-python VCD.py --cookie "BREEZESESSION=abc123..." "https://vadavc32.ec.iau.ir/lasqwynd9xye"
+# Video — default
+python vcd_core.py "https://vadavc32.ec.iau.ir/<id>/?session=TOKEN&proto=true"
+
+# Custom output filename
+python vcd_core.py --output lecture_week3.mp4 "https://..."
+
+# Audio only
+python vcd_core.py --audio-only "https://..."
+
+# Audio only, silence removed
+python vcd_core.py --audio-only --trim-silence "https://..."
+
+# Timeline XML only, skip render
+python vcd_core.py --xml-only "https://..."
 ```
 
-**C) Interactive cookie paste**  
-The tool will guide you to copy the cookie from your browser’s DevTools if no other method works.
-
-### Command‑line arguments
+**All CLI flags:**
 
 ```
-usage: VCD.py [-h] [--output OUTPUT] [--cookie COOKIE] [--xml-only] [--crf CRF] [--fps FPS] [url]
+python vcd_core.py [OPTIONS] URL
 
-positional arguments:
-  url                   Full class URL (with ?session= is best). If omitted, you will be prompted.
-
-options:
-  -h, --help            show this help message and exit
-  --output, -o OUTPUT   Output MP4 filename (default: Class-<id>.mp4)
-  --cookie COOKIE       BREEZESESSION value or full cookie string
-  --xml-only            Only generate timeline.xml, don't render video
-  --crf CRF             Video quality (CRF, lower=better, default 30)
-  --fps FPS             Output frame rate (default 30)
+  --output FILE       Output filename  (default: Class-<id>.mp4 or .m4a)
+  --cookie VALUE      BREEZESESSION value or full cookie string
+  --xml-only          Write timeline.xml only, skip render
+  --audio-only        Export .m4a without video processing
+  --trim-silence      Remove silent gaps  (requires --audio-only)
+  --crf INT           Quality — lower = better  (default: 30)
+  --fps INT           Frame rate  (default: 30)
 ```
 
-**Examples:**
+### Authentication
 
-```bash
-# Use session token from URL
-python VCD.py "https://vadavc32.ec.iau.ir/lasqwynd9xye/?session=...&proto=true"
+Tried in order — the first working method is used:
 
-# Provide cookie and custom output name
-python VCD.py --cookie "BREEZESESSION=abc123" -o my_class.mp4 "https://..."
-
-# Only generate the timeline (no video)
-python VCD.py --xml-only "https://..."
-```
-
-### Running inside Jupyter / IPython
-
-You can run the script directly in a notebook cell – it automatically filters out the kernel’s connection file argument and asks for the URL interactively.
-
-```python
-%run VCD.py
-```
-
-or, with arguments:
-
-```python
-%run VCD.py --cookie "BREEZESESSION=abc" "https://..."
-```
+1. **`?session=` in URL** — paste the full recording link; the tool extracts the token automatically
+2. **`--cookie` flag / Cookie field** — your `BREEZESESSION` value (browser DevTools → Application → Cookies → your server domain)
+3. **Interactive prompt** — CLI only; guides you through copying the cookie manually when no other method works
 
 ---
 
-## 🔍 How It Works (briefly)
+## How It Works
 
-1. **Authentication** – obtains a valid session using the provided cookie/token (fallback chain: `?session=` → CLI `--cookie` → interactive paste).
-2. **Download** – fetches the recording ZIP from `https://<server>/<id>/output/<id>.zip?download=zip`.
-3. **Extraction** – unzips all FLV and XML files into a folder named after the recording ID.
-4. **Timing extraction** – reads `pacingTick` timestamps from XML files to compute a common timebase.
-5. **Segment building** – determines when each screenshare video and audio file is active.
-6. **`timeline.xml`** – generates a unified timeline with exact start/end offsets for every media segment.
-7. **Rendering** – invokes FFmpeg with a complex filter graph:
-   - Black canvas for the whole duration.
-   - Video overlays with PTS offsets (no stale frames).
-   - Audio mixer with precise delays and trimming.
-8. **Output** – a single `Class-<id>.mp4` file placed in the working directory.
-
----
-
-## 📂 Output
-
-- **Final video:** `Class-<recording_id>.mp4` (e.g., `Class-lasqwynd9xye.mp4`)
-- **Extracted files:** a folder named after the recording ID (e.g., `lasqwynd9xye/`).  
-  You can safely delete this folder after a successful run.
+1. **Authentication** — establishes a session via the chain above
+2. **Download** — fetches `/<id>/output/<id>.zip` over HTTPS; sends `Range: bytes=<offset>-` if a partial file exists on disk from a prior attempt
+3. **Extraction** — validates and unzips FLV and XML files into `<id>/`
+4. **Timing extraction** — reads `pacingTick` events from each XML file to compute a shared millisecond timebase; each clip gets an exact `start_ms` and `end_ms` relative to the recording start
+5. **Segment building** — determines which screenshare and audio clip is active at each point in time, handling gaps and overlaps
+6. **Timeline serialisation** — writes `<id>/timeline.xml` with `start`, `end`, and `offset` for every media segment; reusable for debugging or re-render without re-downloading
+7. **Render** — builds FFmpeg filter graph:
+   - Black canvas for the full recording duration
+   - Each screenshare scaled and overlaid with a PTS offset (`setpts` + `overlay`)
+   - Each audio clip delayed to its start time (`adelay`) then mixed with `amix normalize=0`
+   - Encoded with the selected GPU encoder or CPU `libx264`
+8. **Output** — `Class-<id>.mp4`; or `.m4a` for audio-only (skips steps 5–7 for video)
 
 ---
 
-## ❗ Troubleshooting
+## Output
 
-| Problem | Likely cause & solution |
-|---------|--------------------------|
-| `AuthenticationError` – “Could not authenticate” | The session token is expired or invalid. Get a fresh class link or copy the `BREEZESESSION` cookie manually. |
-| `DownloadError` – “HTTP 404 / 403” | The recording may no longer exist or the server requires additional login. Try opening the ZIP URL in your browser while logged in. |
-| `ToolNotFoundError` – ffmpeg/ffprobe not found | Install FFmpeg and ensure `ffmpeg`/`ffprobe` are in your `PATH`, or place them next to `VCD.py`. |
-| Render seems stuck at 95 % | Audio mixing for very long classes can take extra time. Let it finish – a future update will optimise this step. |
-| No video, only audio | Ensure the class actually contained a screenshare. The tool only processes `screenshare*.flv` files with a video track. |
-| `WARN Ignoring non-URL argument` in Jupyter | Normal – the kernel connection file is automatically ignored. The prompt will still ask for the real URL. |
-| URL accepted but script exits silently | A hidden control character may have been pasted. Re‑type the URL manually or use the `--cookie` method. |
+| File | Description |
+|------|-------------|
+| `Class-<id>.mp4` | Final synced video |
+| `Class-<id>.m4a` | Audio-only export |
+| `<id>/timeline.xml` | Serialised timeline — inspect or reuse for re-render |
+| `<id>/` | Extracted raw files — safe to delete after a successful render |
 
 ---
 
-## 📝 Changelog
+## Troubleshooting
 
-### v0.2 – The “Authentication & Robustness” release
-- 🔐 Multiple authentication methods (session token, manual cookie, browser cookies)
-- 🔄 Automatic retry on network failures with exponential backoff
-- 🧪 `argparse` for full command‑line control
-- 🧠 `ToolManager` class replaces global variables
-- 🛡️ Custom exceptions for crystal‑clear error messages
-- 🎨 Animated RGB banner & improved log formatting
-- 🐍 Jupyter/IPython support out‑of‑the‑box
-- 🔧 `RenderConfig` & `DownloadConfig` dataclasses for clean parameter management
-- … and many more small fixes & improvements
-
-### v0.1 – Initial release
-- Basic ZIP download & extraction (unauthenticated)
-- Pacing‑tick alignment for screenshare + audio
-- `timeline.xml` generation and video rendering
+| Problem | Cause & fix |
+|---------|-------------|
+| `AuthenticationError` — "Could not authenticate" | Session expired. Get a fresh class link or copy a fresh `BREEZESESSION` from browser DevTools → Application → Cookies. |
+| `DownloadError` — HTTP 403 / 404 | Recording may no longer exist or requires a different account. Open the ZIP URL in your browser while logged in to verify access. |
+| `ToolNotFoundError` — ffmpeg/ffprobe not found | Add FFmpeg's `bin` folder to PATH, or set a custom path in GUI → Advanced → FFmpeg path. |
+| `MediaProcessingError` — "No media files with a valid pacingTick" | Extracted folder may be empty or corrupt from an earlier interrupted download. Delete `<id>/` and retry. |
+| GPU option grayed out | That encoder is not in your FFmpeg build. Use the `win64-gpl` build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases). |
+| Audio is very quiet | Affects v0.3 and earlier — `amix` was halving volume. Update to v0.4. |
+| Download restarts from 0 after interruption | Affects v0.3 and earlier — no resume support. Update to v0.4. |
+| No screenshare in output | The class had no screenshare stream, only audio. Use `--audio-only`. |
 
 ---
 
-## 🤝 Contributing
+## Changelog
 
-Pull requests, issues, and ideas are warmly welcomed🤗
+> **For maintainers:** to add a new release, paste a new `### vX.Y — YYYY-MM-DD` block
+> at the **top** of this section. Keep the structure: one-line summary, then bullet
+> groups by category (New / Fixed / Changed). Dates go in the header, not in bullets.
 
-Please open an issue before implementing large changes to discuss your approach.
+---
+
+### v0.4 
+
+*Audio export · download resume · GPU validation · six bug fixes.*
+
+**New**
+- `--audio-only` + GUI checkbox: export `.m4a` without any video processing — 10–20× faster, ~95% smaller file size
+- `--trim-silence` + GUI checkbox: remove long silent gaps using FFmpeg's `silenceremove` filter
+- HTTP `Range` resume: an interrupted download continues from the existing partial file on disk
+- GPU auto-detection: header chip shows detected hardware; selecting an unavailable encoder shows an error dialog and reverts
+- Auto-open output file when done, custom FFmpeg path in Advanced, clipboard URL auto-fill on launch
+
+**Fixed**
+- `amix normalize=0` — audio was 6 dB too quiet in all prior versions (`amix` default divides output by input count)
+- `@retry` on `_stream_to_file` — manual Stop during download was delayed 5–8 s by retry backoff; decorator removed
+- Double `_auto_retry()` call in `_on_done` — "Max retries reached" message appeared twice in the log
+- Auto-retry fired after manual Stop — `_stop_requested` flag was not checked before scheduling retry
+- `_stop_requested` not initialised in `__init__` — could raise `AttributeError` before first job
+- Dead imports (`getpass`, `random`, `Callable`, `urlencode`) and duplicate CLI code removed
 
 ---
 
-## 📄 License
+### v0.3
 
-MIT – see [LICENSE](LICENSE) for details.
+*First GUI release.*
+
+**New**
+- `vcd_gui.py` — PySide6 desktop GUI wrapping the unchanged v0.2 core
+- Quality presets: Ultra (1080p) / High (720p) / Balanced (720p) / Compact (480p) / Custom
+- GPU encoder selection: NVIDIA NVENC · AMD AMF · Intel QSV · CPU
+- Batch queue, job history (`~/.vcd/history.json`), output files tab with thumbnail extraction
+- Real-time speed graph with ETA and bytes downloaded
+- System tray with notifications, cookie profiles, URL autocomplete
+- Log panel with per-level filter and free-text search
+- Auto-retry on failure, disk space check, resizable splitter
 
 ---
+
+### v0.2
+
+*Authentication and network resilience.*
+
+**New**
+- Auth chain: `?session=` URL token → `--cookie` flag → browser cookies (`browser_cookie3`)
+- Automatic retry with exponential backoff for unreliable connections
+- `argparse` CLI: `--cookie`, `--output`, `--crf`, `--fps`, `--xml-only`
+- `ToolManager`, `RenderConfig`, `DownloadConfig` dataclasses
+- Custom exceptions: `AuthenticationError`, `DownloadError`, `MediaProcessingError`, `ToolNotFoundError`
+
+---
+
+### v0.1 — Initial release
+
+- ZIP download and extraction (unauthenticated)
+- `pacingTick` alignment for screenshare + audio synchronisation
+- `timeline.xml` generation and single-pass FFmpeg render
+
+---
+
+## Contributing
+
+Pull requests and issues are welcome.  
+Please open an issue before implementing large changes to align on approach first.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
+
+---
+
+<p align="center">
+  <a href="https://t.me/IAUCourseExp">@IAUCourseExp</a>
+  &nbsp;·&nbsp;
+  <a href="https://t.me/JozveIAU">@JozveIAU</a>
+  &nbsp;·&nbsp;
+  <a href="https://github.com/IAUCourseExp/VCD">⭐ Star on GitHub</a>
+</p>
