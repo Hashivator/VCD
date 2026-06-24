@@ -1,16 +1,15 @@
 # Authentication
 from typing import Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from colorama import Fore, Style
 import requests
 
 from vcd.core.exceptions import AuthenticationError
-from vcd.core.logging import log
+from vcd.logger import log
 from vcd.core.network import (
     DownloadConfig,
     _build_zip_url,
-    _extract_session_from_url,
     _looks_like_zip,
 )
 
@@ -131,3 +130,13 @@ def acquire_authenticated_session(
         "  • Copy your BREEZESESSION cookie manually (see instructions above).\n"
         "  • Use the --cookie flag to pass it directly, e.g. --cookie abc123..."
     )
+
+
+def _extract_session_from_url(meeting_url: str) -> Optional[str]:
+    """If the URL contains a ?session= parameter, return it."""
+    parsed = urlparse(meeting_url)
+    params = parse_qs(parsed.query)
+    token = params.get("session", [None])[0]
+    if token:
+        log(f"Session token found in URL: {token[:8]}…", "INFO")
+    return token

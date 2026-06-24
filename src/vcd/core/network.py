@@ -2,7 +2,7 @@ from pathlib import Path
 import random
 import time
 from typing import Callable, Optional
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import urlparse
 import zipfile
 
 import requests
@@ -11,7 +11,93 @@ from tqdm import tqdm
 from vcd.core.auth import acquire_authenticated_session
 from vcd.core.config import DownloadConfig
 from vcd.core.exceptions import DownloadError
-from vcd.core.logging import log
+from vcd.logger import log
+
+
+class Downloader:
+    def __init__(self):
+        # Instance variable replaces the global _current_response
+        self._response: Optional[requests.Response] = None
+
+    def cancel(self):
+        """Immediately interrupt the network socket if open."""
+        if self._response:
+            self._response.close()
+
+    def stream_to_file(
+        self,
+        resp: requests.Response,
+        dest: Path,
+        chunk_size: int,
+        progress_cb: Optional[Callable[[int], None]] = None,
+    ) -> None:
+        """Download the response body to a file, emitting native progress."""
+        self._response = resp
+        total = int(resp.headers.get("content-length", 0))
+        downloaded = 0
+
+        try:
+            with open(dest, "wb") as fh:
+                # iter_content will immediately raise an error if self.cancel() is called
+                for chunk in resp.iter_content(chunk_size):
+                    if not chunk:
+                        continue
+                    fh.write(chunk)
+                    downloaded += len(chunk)
+
+                    # Fire the callback to update the GUI natively (No Regex)
+                    if progress_cb and total > 0:
+                        pct = int((downloaded / total) * 100)
+                        progress_cb(max(0, min(100, pct)))
+        finally:
+            self._response = None
+
+    def download_and_extract(
+        self,
+        url: str,
+        target_dir: Path,
+        session: requests.Session,
+        cfg: DownloadConfig,
+        progress_cb: Optional[Callable[[int], None]] = None,
+    ) -> Path:
+        """
+        Authenticates, streams the ZIP to disk, and extracts it.
+        """
+        zip_url, recording_id = _build_zip_url(url)
+        zip_path = Path(f"{recording_id}_dl.zip")
+
+        log(f"ZIP URL: {zip_url}")
+        log("Verifying download access…")
+
+        try:
+            resp = session.get(zip_url, stream=True, timeout=cfg.timeout)
+        except requests.RequestException as exc:
+            raise DownloadError(f"Cannot reach download server: {exc}")
+
+        if not _looks_like_zip(resp):
+            raise DownloadError(
+                "The server did not return a valid ZIP.\n"
+                "  • Your session may have expired.\n"
+                "  • The class may belong to a different account.\n"
+                "  • Re-run with a fresh BREEZESESSION cookie."
+            )
+
+        # Execute the stream. The progress callback routes straight to PySide6.
+        self.stream_to_file(resp, zip_path, cfg.chunk_size, progress_cb)
+
+        if not _try_extract(zip_path, target_dir):
+            try:
+                if target_dir.exists() and not any(target_dir.iterdir()):
+                    target_dir.rmdir()
+            except Exception:
+                pass
+            raise DownloadError(
+                "Downloaded file is not a valid ZIP archive.\n"
+                "  • The server might have sent a login page instead.\n"
+                "  • Try again with a correct session cookie."
+            )
+
+        return target_dir
 
 
 # Retry helper for iranian networks
@@ -54,16 +140,6 @@ def _build_zip_url(meeting_url: str) -> tuple[str, str]:
         raise ValueError("Cannot extract recording ID from the URL.")
     base = f"{parsed.scheme}://{parsed.netloc}"
     return f"{base}/{rid}/output/{rid}.zip?download=zip", rid
-
-
-def _extract_session_from_url(meeting_url: str) -> Optional[str]:
-    """If the URL contains a ?session= parameter, return it."""
-    parsed = urlparse(meeting_url)
-    params = parse_qs(parsed.query)
-    token = params.get("session", [None])[0]
-    if token:
-        log(f"Session token found in URL: {token[:8]}…", "INFO")
-    return token
 
 
 def _looks_like_zip(resp: requests.Response) -> bool:
