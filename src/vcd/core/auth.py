@@ -3,7 +3,7 @@ from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from colorama import Fore, Style
-import requests
+import niquests as requests
 
 from vcd.core.exceptions import AuthenticationError
 from vcd.logger import log

@@ -5,13 +5,16 @@ from typing import Callable, Optional
 from urllib.parse import urlparse
 import zipfile
 
-import requests
+import niquests as requests
+from niquests.packages.urllib3.exceptions import InsecureRequestWarning
 from tqdm import tqdm
 
 from vcd.core.auth import acquire_authenticated_session
 from vcd.core.config import DownloadConfig
 from vcd.core.exceptions import DownloadError
 from vcd.logger import log
+
+requests.package.urllib3.disable_warnings(InsecureRequestWarning)
 
 
 class Downloader:
