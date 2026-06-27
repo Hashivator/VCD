@@ -14,7 +14,7 @@ from vcd.core.config import DownloadConfig
 from vcd.core.exceptions import DownloadError
 from vcd.logger import log
 
-requests.package.urllib3.disable_warnings(InsecureRequestWarning)
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
 class Downloader:

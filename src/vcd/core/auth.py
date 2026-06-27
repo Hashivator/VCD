@@ -6,12 +6,8 @@ from colorama import Fore, Style
 import niquests as requests
 
 from vcd.core.exceptions import AuthenticationError
+from vcd.core.config import DownloadConfig
 from vcd.logger import log
-from vcd.core.network import (
-    DownloadConfig,
-    _build_zip_url,
-    _looks_like_zip,
-)
 
 
 def _make_session(cfg: DownloadConfig) -> requests.Session:
@@ -73,6 +69,7 @@ def acquire_authenticated_session(
     Return an authenticated session, or raise AuthenticationError.
     Order: 0. session token from URL → 1. manual cookie (if given) → 2. browser cookies.
     """
+    from vcd.core.network import _build_zip_url, _looks_like_zip
     zip_url, _ = _build_zip_url(meeting_url)
 
     # 0 – ?session= in URL

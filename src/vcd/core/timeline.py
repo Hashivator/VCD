@@ -5,7 +5,6 @@ from xml.dom import minidom
 import xml.etree.ElementTree as ET
 
 from vcd.logger import log
-from vcd.core.media import probe_duration
 
 
 # XML timing extraction
@@ -80,6 +79,7 @@ def collect_media_intervals(
             log(f"  ⚠  {flv.name} – no usable stream", "WARN")
             continue
 
+        from vcd.core.media import probe_duration
         dur_sec = probe_duration(ffprobe_path, flv)
         if dur_sec <= 0:
             log(f"  ⚠  {flv.name} – zero duration", "WARN")
