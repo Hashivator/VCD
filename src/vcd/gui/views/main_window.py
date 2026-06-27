@@ -1,22 +1,23 @@
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
     QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
     QSplitter,
     QTabWidget,
-    QLabel,
     QToolButton,
-    QMessageBox,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Signal, Qt
-from PySide6.QtGui import QIcon, QPixmap, QColor
-from vcd.gui.widgets.starfield import StarField
+
+from vcd.gui.constants import _APP_ICON_B64, SKY
+from vcd.gui.views.tabs.files_tab import FilesTab
+from vcd.gui.views.tabs.history_tab import HistoryTab
 from vcd.gui.views.tabs.left_panel import LeftPanel
 from vcd.gui.views.tabs.log_tab import LogTab
-from vcd.gui.views.tabs.history_tab import HistoryTab
-from vcd.gui.views.tabs.files_tab import FilesTab
-from vcd.gui.constants import SKY, _APP_ICON_B64
+from vcd.gui.widgets.starfield import StarField
 
 
 class MainWindow(StarField):
@@ -134,7 +135,7 @@ class MainWindow(StarField):
         return eff
 
     def _setup_shortcuts(self):
-        from PySide6.QtGui import QShortcut, QKeySequence
+        from PySide6.QtGui import QKeySequence, QShortcut
 
         QShortcut(QKeySequence("Ctrl+Return"), self).activated.connect(
             self.left_panel.sig_go_clicked

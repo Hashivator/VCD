@@ -1,8 +1,9 @@
 import math
 import random
+
+from PySide6.QtCore import QPointF, QTimer
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QRadialGradient, Qt
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import QTimer, QPointF
-from PySide6.QtGui import QPainter, QColor, QLinearGradient, QRadialGradient, Qt
 
 
 class StarField(QWidget):

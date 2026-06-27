@@ -1,9 +1,9 @@
-from pathlib import Path
 import random
 import time
+import zipfile
+from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urlparse
-import zipfile
 
 import niquests as requests
 from niquests.packages.urllib3.exceptions import InsecureRequestWarning

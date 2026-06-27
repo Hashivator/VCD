@@ -1,11 +1,11 @@
 import json
 import os
-from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
-from typing import Optional, Callable
+from pathlib import Path
+from typing import Callable, Optional
 
 from tqdm import tqdm
 
@@ -17,7 +17,6 @@ from vcd.core.timeline import (
     write_timeline_xml,
 )
 from vcd.logger import log
-
 
 # holds the currently-running ffmpeg subprocess so GUI can kill it on stop
 _current_proc: "Optional[subprocess.Popen]" = None

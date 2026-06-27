@@ -1,5 +1,15 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton, QTableWidget, QAbstractItemView, QLabel
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QTableWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 from vcd.gui.constants import GREEN, RED
 
 

@@ -1,7 +1,8 @@
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QHBoxLayout, QLabel
 from PySide6.QtCore import Qt
-from vcd.gui.widgets.speed_graph import SpeedGraph
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout
+
 from vcd.gui.utils.formatters import _fmt_dur
+from vcd.gui.widgets.speed_graph import SpeedGraph
 
 
 class StatsWidget(QFrame):

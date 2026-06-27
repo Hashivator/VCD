@@ -1,39 +1,39 @@
 import os
 import re
-import uuid
 import subprocess
+import uuid
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
 from typing import Optional
+from urllib.parse import parse_qs, urlparse
 
-from PySide6.QtCore import QTimer, QThread, QUrl
+from PySide6.QtCore import QThread, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QMessageBox,
-    QFileDialog,
     QDialog,
-    QVBoxLayout,
+    QDialogButtonBox,
+    QFileDialog,
     QLabel,
     QLineEdit,
-    QDialogButtonBox,
     QMenu,
+    QMessageBox,
+    QVBoxLayout,
 )
 
-from vcd.gui.workers.async_worker import Worker
-from vcd.gui.models.history_db import JobHistoryDB
-from vcd.gui.models.queue_manager import QueueManager
-from vcd.gui.managers.settings_manager import SettingsManager
 from vcd.gui.constants import (
-    PRESETS,
-    GPU_KEYS,
-    GPU_OPTIONS,
     _MAX_RETRIES,
     _THUMB_DIR,
+    GPU_KEYS,
+    GPU_OPTIONS,
     GREEN,
+    PRESETS,
     RED,
 )
-from vcd.gui.utils.formatters import _disk_free, _fmt_size, _fmt_dur, _tobool
+from vcd.gui.managers.settings_manager import SettingsManager
+from vcd.gui.models.history_db import JobHistoryDB
+from vcd.gui.models.queue_manager import QueueManager
+from vcd.gui.utils.formatters import _disk_free, _fmt_dur, _fmt_size, _tobool
+from vcd.gui.workers.async_worker import Worker
 
 try:
     from vcd.core import media as core

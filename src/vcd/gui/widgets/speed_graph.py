@@ -1,7 +1,8 @@
-from PySide6.QtWidgets import QWidget, QSizePolicy
 from PySide6.QtCore import QPointF
-from PySide6.QtGui import QPainter, QColor, QLinearGradient, QPainterPath, QPen, Qt
-from vcd.gui.utils.formatters import _parse_bps, _fmt_bytes
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QPen, Qt
+from PySide6.QtWidgets import QSizePolicy, QWidget
+
+from vcd.gui.utils.formatters import _fmt_bytes, _parse_bps
 
 
 class SpeedGraph(QWidget):

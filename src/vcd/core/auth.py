@@ -2,11 +2,11 @@
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
-from colorama import Fore, Style
 import niquests as requests
+from colorama import Fore, Style
 
-from vcd.core.exceptions import AuthenticationError
 from vcd.core.config import DownloadConfig
+from vcd.core.exceptions import AuthenticationError
 from vcd.logger import log
 
 

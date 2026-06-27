@@ -1,12 +1,14 @@
 import sys
+
 from PySide6.QtWidgets import QApplication, QMessageBox
-from vcd.gui.views.main_window import MainWindow
-from vcd.gui.models.history_db import JobHistoryDB
-from vcd.gui.models.queue_manager import QueueManager
+
+from vcd.gui.constants import THEME, get_app_icon
+from vcd.gui.controllers.main_controller import MainController
 from vcd.gui.managers.settings_manager import SettingsManager
 from vcd.gui.managers.tray_manager import TrayManager
-from vcd.gui.controllers.main_controller import MainController
-from vcd.gui.constants import get_app_icon, THEME
+from vcd.gui.models.history_db import JobHistoryDB
+from vcd.gui.models.queue_manager import QueueManager
+from vcd.gui.views.main_window import MainWindow
 
 try:
     from vcd.core import media as core

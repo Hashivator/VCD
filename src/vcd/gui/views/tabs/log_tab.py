@@ -1,5 +1,15 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton, QLineEdit, QPlainTextEdit, QLabel
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
 from vcd.gui.constants import LEVEL_COLOR, LEVEL_ICON
 
 

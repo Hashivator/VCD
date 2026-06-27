@@ -1,10 +1,10 @@
 import argparse
-from pathlib import Path
 import re
 import shutil
 import sys
 import textwrap
 import time
+from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse
 
@@ -17,9 +17,9 @@ from vcd.core.exceptions import (
     MediaProcessingError,
     ToolNotFoundError,
 )
-from vcd.logger import log
 from vcd.core.media import init_tools, process_recording
 from vcd.core.network import download_and_extract
+from vcd.logger import log
 
 try:
     from pyfiglet import Figlet

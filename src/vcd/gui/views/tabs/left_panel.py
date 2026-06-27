@@ -1,37 +1,38 @@
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
+    QAbstractItemView,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
     QFrame,
-    QScrollArea,
+    QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
-    QComboBox,
-    QPushButton,
-    QToolButton,
-    QCheckBox,
-    QSpinBox,
-    QSlider,
-    QProgressBar,
-    QButtonGroup,
-    QGridLayout,
-    QAbstractItemView,
     QListWidget,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSlider,
+    QSpinBox,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PySide6.QtCore import Signal, Qt, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QColor
+
 from vcd.gui.constants import (
-    PRESETS,
-    RESOLUTIONS,
-    VPRESETS,
-    ABITRATES,
-    GPU_OPTIONS,
-    _MAX_RETRIES,
-    SKY,
     _BAR_DOWNLOAD,
     _BAR_RENDER,
+    _MAX_RETRIES,
     _PRESET_ACTIVE,
     _QUEUE_CLR,
+    ABITRATES,
+    GPU_OPTIONS,
+    PRESETS,
+    RESOLUTIONS,
+    SKY,
+    VPRESETS,
 )
 from vcd.gui.widgets.stats_panel import StatsWidget
 

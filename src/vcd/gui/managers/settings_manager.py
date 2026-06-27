@@ -1,4 +1,5 @@
 from PySide6.QtCore import QSettings
+
 from vcd.gui.constants import _MAX_URL_HIST
 
 

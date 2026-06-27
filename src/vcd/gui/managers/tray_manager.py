@@ -1,5 +1,6 @@
-from PySide6.QtWidgets import QWidget, QSystemTrayIcon, QMenu, QApplication
-from PySide6.QtGui import QPixmap, QPainter, QColor, Qt, QIcon, QAction
+from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap, Qt
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon, QWidget
+
 from vcd.gui.constants import get_app_icon
 
 

@@ -1,8 +1,8 @@
 # Timeline reader and renderer
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 from xml.dom import minidom
-import xml.etree.ElementTree as ET
 
 from vcd.logger import log
 
