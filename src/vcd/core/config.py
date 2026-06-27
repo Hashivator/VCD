@@ -15,8 +15,8 @@ class RenderConfig:
 
 @dataclass
 class DownloadConfig:
-    verify_ssl: bool = False
-    chunk_size: int = 8192
+    verify_ssl: bool = True
+    chunk_size: int = 2 * 1024 * 1024
     timeout: int = 60
     headers: dict = field(
         default_factory=lambda: {

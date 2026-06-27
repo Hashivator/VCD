@@ -18,13 +18,15 @@ from vcd.core.exceptions import (
     ToolNotFoundError,
 )
 from vcd.core.media import init_tools, process_recording
-from vcd.core.network import download_and_extract
+from vcd.core.network import Downloader
 from vcd.logger import log
 
 try:
     from pyfiglet import Figlet
 except ImportError:
     Figlet = None
+
+downloader = Downloader()
 
 
 def _print_rgb_banner(text: str) -> None:
@@ -164,7 +166,7 @@ def main():
         result_dir = Path(working_dir)
     else:
         try:
-            result_dir = download_and_extract(
+            result_dir = downloader.download_and_extract(
                 args.url, working_dir, DownloadConfig(), args.cookie
             )
         except (DownloadError, AuthenticationError) as exc:

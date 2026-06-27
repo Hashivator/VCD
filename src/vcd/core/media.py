@@ -312,11 +312,12 @@ def _video_encoder_args(cfg: "RenderConfig") -> list:
 
 
 def render_video_from_timeline(
-    tools: ToolManager,
+    renderer: Renderer,
     media_folder: Path,
     timeline_path: Path,
     output_video: Path,
     cfg: RenderConfig = RenderConfig(),
+    progress_cb: Optional[Callable[[int], None]] = None,
 ) -> None:
     video_plan, audio_meta, total_ms = _read_timeline_xml(timeline_path)
     total_sec = total_ms / 1000.0
@@ -350,7 +351,7 @@ def render_video_from_timeline(
     audio_srcs.sort(key=lambda x: x["start_ms"])
     nv, na = len(video_srcs), len(audio_srcs)
 
-    cmd = [tools.ffmpeg, "-y"]
+    cmd = [renderer.ffmpeg_path, "-y"]
     cmd += [
         "-f",
         "lavfi",
@@ -428,7 +429,9 @@ def render_video_from_timeline(
         str(output_video),
     ]
 
-    execute_ffmpeg(tools.ffmpeg, cmd, "Merging final video", duration_sec=total_sec)
+    renderer.execute(
+        cmd, "Merging final video", duration_sec=total_sec, progress_cb=progress_cb
+    )
     log(f"🎉 Final video: {output_video}", "SUCCESS")
 
 

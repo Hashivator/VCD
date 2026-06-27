@@ -11,7 +11,7 @@ from vcd.logger import log
 
 
 def _make_session(cfg: DownloadConfig) -> requests.Session:
-    s = requests.Session()
+    s = requests.Session(multiplexed=True)
     s.headers.update(cfg.headers)
     s.verify = cfg.verify_ssl
     return s
@@ -70,6 +70,7 @@ def acquire_authenticated_session(
     Order: 0. session token from URL → 1. manual cookie (if given) → 2. browser cookies.
     """
     from vcd.core.network import _build_zip_url, _looks_like_zip
+
     zip_url, _ = _build_zip_url(meeting_url)
 
     # 0 – ?session= in URL

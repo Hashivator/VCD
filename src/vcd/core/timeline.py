@@ -73,13 +73,14 @@ def collect_media_intervals(
             log(f"  ⚠  {flv.name} – no valid pacingTick", "WARN")
             continue
 
+        from vcd.core.media import contains_stream, probe_duration
+
         has_video = contains_stream(ffprobe_path, flv, "video")
         has_audio = contains_stream(ffprobe_path, flv, "audio")
         if not has_video and not has_audio:
             log(f"  ⚠  {flv.name} – no usable stream", "WARN")
             continue
 
-        from vcd.core.media import probe_duration
         dur_sec = probe_duration(ffprobe_path, flv)
         if dur_sec <= 0:
             log(f"  ⚠  {flv.name} – zero duration", "WARN")
