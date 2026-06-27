@@ -10,7 +10,7 @@
 
 <p align="center">
   Download, sync, and render Adobe Connect (Vadana) class recordings into a single MP4.<br>
-  Screenshare + audio &nbsp;·&nbsp; GPU-accelerated &nbsp;·&nbsp; Audio-only export &nbsp;·&nbsp; Batch queue
+  Screenshare + audio &nbsp;·&nbsp; GPU-accelerated &nbsp;·&nbsp; Batch queue
 </p>
 
 <p align="center">
@@ -61,31 +61,68 @@
 
 IAU Azad University's Vadana platform is built on Adobe Connect. Class recordings are stored as a ZIP archive of FLV video segments and XML timing files — not a single watchable video. Reconstructing those pieces into one correctly-synchronised MP4, with screenshare overlaid on audio and all timing offsets precisely applied, is what VCD does.
 
-The tool covers the full pipeline: authentication, download with resume support, millisecond-accurate timeline extraction from Adobe Connect's internal `pacingTick` format, and FFmpeg rendering with hardware GPU acceleration and an audio-only fast path.
+The tool covers the full pipeline: authentication, download with resume support, millisecond-accurate timeline extraction from Adobe Connect's internal `pacingTick` format, and FFmpeg rendering with hardware GPU acceleration.
 
-**Two files, one job:**
+**Two subpackages, one job:**
 
-| File | Role |
-|------|------|
-| `vcd_core.py` | Download and render engine — runs standalone as a CLI |
-| `vcd_gui.py` | PySide6 desktop GUI — wraps core without modifying its logic |
+| Package | Role |
+|---------|------|
+| `src/vcd/core/` | Download and render engine — runs standalone as a CLI |
+| `src/vcd/gui/` | PySide6 desktop GUI — wraps core via MVC without modifying its logic |
 
 ---
 
 ## Architecture
 
-The codebase has one hard rule: **the GUI never modifies core's logic.** `vcd_gui.py` intercepts `sys.stdout`/`sys.stderr` to capture `core.log()` output and `tqdm` progress bars, converting them into Qt signals that drive UI updates. Core runs in a background `QThread` and knows nothing about the GUI.
+The codebase has one hard rule: **the GUI never modifies core's logic.** `vcd.gui` uses an MVC architecture where the `Worker` intercepts `sys.stdout`/`sys.stderr` to capture core's `log()` output and `tqdm` progress bars, converting them into Qt signals that drive UI updates. Core runs in a background `QThread` and knows nothing about the GUI.
+
+### Package layout
+
+```
+src/vcd/
+├── logger.py                  shared timestamped, colour-coded logging
+├── core/
+│   ├── auth.py                acquire_authenticated_session() — auth chain
+│   ├── cli.py                 CLI entry point (argparse)
+│   ├── config.py              RenderConfig, DownloadConfig dataclasses
+│   ├── exceptions.py          VCDError hierarchy
+│   ├── media.py               Renderer, FilterGraphBuilder, render_video_from_timeline()
+│   ├── network.py             Downloader — HTTPS stream, Range resume, ZIP extraction
+│   └── timeline.py            pacingTick XML → timeline.xml
+└── gui/
+    ├── main.py                GUI entry point
+    ├── constants.py           palette, QSS theme, presets, icons
+    ├── controllers/
+    │   └── main_controller.py MainController — MVC orchestrator
+    ├── managers/
+    │   ├── settings_manager.py  QSettings persistence
+    │   └── tray_manager.py      system tray + notifications
+    ├── models/
+    │   ├── history_db.py      JobHistoryDB (~/.vcd/history.json)
+    │   └── queue_manager.py   in-memory batch queue
+    ├── views/
+    │   ├── main_window.py     top-level QMainWindow
+    │   └── tabs/              left_panel, log_tab, history_tab, files_tab
+    ├── widgets/
+    │   ├── speed_graph.py     real-time speed sparkline
+    │   ├── starfield.py       animated background
+    │   └── stats_panel.py     elapsed · bytes · ETA · speed graph
+    ├── workers/
+    │   └── async_worker.py    Worker + _StreamRouter (QThread bridge)
+    └── utils/
+        └── formatters.py      string formatting helpers
+```
 
 ### System diagram
 
 ```
 ┌───────────────────────────────────────────────────────────────────┐
-│  vcd_gui.py  —  PySide6 Desktop GUI                              │
+│  src/vcd/gui/  —  PySide6 Desktop GUI (MVC)                      │
 │                                                                   │
-│  MainWindow                                                       │
-│   ├─ BatchQueue          sequential URL processing                │
+│  MainController                                                   │
+│   ├─ QueueManager        sequential URL processing                │
 │   ├─ JobHistoryDB        ~/.vcd/history.json                      │
-│   ├─ StatsWidget         speed graph · ETA · bytes                │
+│   ├─ SettingsManager     QSettings persistence                    │
 │   ├─ TrayManager         system tray + notifications              │
 │   └─ Worker ──────────────────────────────────────────→ QThread   │
 │          │                                                        │
@@ -97,43 +134,40 @@ The codebase has one hard rule: **the GUI never modifies core's logic.** `vcd_gu
 └──────────────────────────┬────────────────────────────────────────┘
                            │ calls (never modifies)
 ┌──────────────────────────▼────────────────────────────────────────┐
-│  vcd_core.py  —  Download & Render Engine                        │
+│  src/vcd/core/  —  Download & Render Engine                       │
 │                                                                   │
-│  URL                                                              │
+│  auth.py                                                           │
 │   └─→ acquire_authenticated_session()                             │
 │          ?session= token → manual cookie → interactive prompt     │
-│   └─→ download_and_extract()                                      │
+│  network.py                                                        │
+│   └─→ Downloader.download_and_extract()                           │
 │          HTTPS stream · HTTP Range resume · ZIP extraction        │
+│  timeline.py                                                       │
 │   └─→ collect_media_intervals()                                   │
 │          parse pacingTick XML → millisecond-accurate clip offsets │
 │   └─→ write_timeline_xml()                                        │
 │          serialise for inspection / reuse                         │
-│                                                                   │
+│  media.py                                                          │
 │          ┌──────────────────────────────┐                         │
 │          │  render_video_from_timeline  │──→ Class-<id>.mp4       │
 │          │  FilterGraphBuilder          │   GPU: NVENC/AMF/QSV    │
 │          │  _video_encoder_args()       │   CPU: libx264          │
 │          └──────────────────────────────┘                         │
-│          ┌──────────────────────────────┐                         │
-│          │  export_audio()              │──→ Class-<id>.m4a       │
-│          │  amix · silenceremove        │   audio-only fast path  │
-│          └──────────────────────────────┘                         │
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-### Core components
+### Core modules
 
-| Component | Responsibility |
-|-----------|---------------|
-| `acquire_authenticated_session()` | Auth chain: URL `?session=` → CLI cookie → interactive prompt |
-| `download_and_extract()` | HTTPS streaming with `Range` header resume; ZIP validation and extraction |
-| `collect_media_intervals()` | Reads `pacingTick` from each XML, computes `start_ms` / `end_ms` per clip against a global base tick |
-| `write_timeline_xml()` | Serialises computed timeline with exact offsets for every segment |
-| `render_video_from_timeline()` | Builds FFmpeg `-filter_complex`: black canvas + video overlays + `amix` |
-| `export_audio()` | Audio-only: `amix normalize=0` + optional `silenceremove` → AAC output |
-| `FilterGraphBuilder` | Constructs filter graph strings segment by segment — no manual string concatenation |
-| `_video_encoder_args()` | Returns encoder-specific CLI args for CPU / NVIDIA NVENC / AMD AMF / Intel QSV |
-| `_current_proc` / `_current_response` | Module-level refs for cross-thread kill: `proc.terminate()` + `resp.close()` |
+| Module | Responsibility |
+|--------|---------------|
+| `auth.py` | `acquire_authenticated_session()` — auth chain: URL `?session=` → CLI cookie → interactive prompt |
+| `network.py` | `Downloader` — HTTPS streaming with `Range` header resume; ZIP validation and extraction; retry with exponential backoff |
+| `timeline.py` | `collect_media_intervals()` — reads `pacingTick` from each XML, computes `start_ms` / `end_ms` per clip; `write_timeline_xml()` — serialises timeline |
+| `media.py` | `Renderer` — FFmpeg execution with progress tracking; `render_video_from_timeline()` — filter graph: black canvas + video overlays + `amix`; `FilterGraphBuilder`; `_video_encoder_args()` for CPU / NVIDIA / AMD / Intel |
+| `cli.py` | CLI entry point (`main()`) — argparse, banner, orchestration |
+| `config.py` | `RenderConfig`, `DownloadConfig` dataclasses |
+| `exceptions.py` | `VCDError` hierarchy: `ToolNotFoundError`, `AuthenticationError`, `DownloadError`, `MediaProcessingError` |
+| `logger.py` | Shared `log(msg, level)` — timestamped, colour-coded stdout output |
 
 ### GUI threading model
 
@@ -142,12 +176,15 @@ UI Thread                         Worker Thread
 ─────────────────────             ─────────────────────────────────
 MainWindow._start()
   → Worker.run() ───────────────→ sys.stdout = _StreamRouter
-                                  core.init_tools()
-                                  core.download_and_extract()
-                                  core.process_recording()
+                                  init_tools()
+                                  acquire_authenticated_session()
+                                  Downloader.download_and_extract()
+                                  collect_media_intervals()
+                                  write_timeline_xml()
+                                  render_video_from_timeline()
                                   sys.stdout = old_stdout
 
-← sig_log(level, msg)           ← _StreamRouter.write() ← core.log()
+← sig_log(level, msg)           ← _StreamRouter.write() ← log()
 ← sig_progress(mode, pct)       ← tqdm bar pattern matched
 ← sig_speed("2.4 MB/s")         ← speed parsed from tqdm line
 ← sig_eta("01:23")              ← remaining time parsed
@@ -161,10 +198,10 @@ Stopping immediately requires interrupting work across two layers:
 
 | Stage | Method | Effect |
 |-------|--------|--------|
-| Download | `_current_response.close()` | Closes the socket; `iter_content()` raises immediately |
-| FFmpeg render | `_current_proc.terminate()` | SIGTERM to the running ffmpeg process |
+| Download | `Downloader.cancel()` → closes the response socket | `stream_to_file()` raises immediately |
+| FFmpeg render | `Renderer.cancel()` → terminates the ffmpeg process | SIGTERM to the running ffmpeg process |
 
-Both calls happen in `Worker.cancel()`, triggered by `_stop()` on the UI thread.
+Both calls happen in `Worker.cancel()`, triggered by `_stop()` on the UI thread via `MainController`.
 
 ---
 
@@ -185,11 +222,6 @@ Both calls happen in `Worker.cancel()`, triggered by `_stop()` on the UI thread.
 - Header chip shows detected GPU hardware; selecting an unavailable encoder shows an error and reverts the choice
 - CPU fallback (`libx264`) always available
 - Volume fix: `amix normalize=0` (prior versions halved audio volume when mixed with the silence padding track)
-
-#### Audio export
-
-- Audio-only mode — exports `.m4a` without any video processing, 10–20× faster
-- Silence trimming — removes gaps longer than 1.5 s via FFmpeg's `silenceremove` filter
 
 #### GUI
 
@@ -251,15 +283,17 @@ pip install -r requirements.txt
 `requirements.txt`:
 
 ```
-requests
-urllib3
-tqdm
-colorama
-PySide6              # GUI only — safe to omit for CLI
-pyfiglet             # optional — ASCII banner in CLI
-beautifulsoup4       # optional — HTML form auth fallback
-browser-cookie3      # optional — auto-extract browser cookies
+PySide6>=6.0.0
+requests>=2.28.0
+urllib3>=1.26.0
+tqdm>=4.64.0
+colorama>=0.4.4
+beautifulsoup4>=4.9.0
+browser-cookie3>=0.12.0
+pyfiglet>=0.8.post1
 ```
+
+> **Note:** The core modules import `niquests` (aliased as `requests`) for HTTP/2 multiplexed sessions. The `requests` entry in `requirements.txt` is the current dependency name — update it to `niquests` if your build uses the niquests fork.
 
 Optional packages degrade gracefully when missing.
 
@@ -270,7 +304,7 @@ Optional packages degrade gracefully when missing.
 ### GUI
 
 ```bash
-python vcd_gui.py
+python -m vcd.gui.main
 ```
 
 On launch: FFmpeg and FFprobe are located, the best available GPU encoder is auto-detected and selected, and the URL field is auto-filled if a class link is in the clipboard.
@@ -282,31 +316,23 @@ For batch processing: **+ Add to Queue** → build a list → **Run Queue**.
 
 ```bash
 # Video — default
-python vcd_core.py "https://vadavc32.ec.iau.ir/<id>/?session=TOKEN&proto=true"
+python -m vcd.core.cli "https://vadavc32.ec.iau.ir/<id>/?session=TOKEN&proto=true"
 
 # Custom output filename
-python vcd_core.py --output lecture_week3.mp4 "https://..."
-
-# Audio only
-python vcd_core.py --audio-only "https://..."
-
-# Audio only, silence removed
-python vcd_core.py --audio-only --trim-silence "https://..."
+python -m vcd.core.cli --output lecture_week3.mp4 "https://..."
 
 # Timeline XML only, skip render
-python vcd_core.py --xml-only "https://..."
+python -m vcd.core.cli --xml-only "https://..."
 ```
 
 **All CLI flags:**
 
 ```
-python vcd_core.py [OPTIONS] URL
+python -m vcd.core.cli [OPTIONS] URL
 
-  --output FILE       Output filename  (default: Class-<id>.mp4 or .m4a)
+  --output FILE       Output filename  (default: Class-<id>.mp4)
   --cookie VALUE      BREEZESESSION value or full cookie string
   --xml-only          Write timeline.xml only, skip render
-  --audio-only        Export .m4a without video processing
-  --trim-silence      Remove silent gaps  (requires --audio-only)
   --crf INT           Quality — lower = better  (default: 30)
   --fps INT           Frame rate  (default: 30)
 ```
@@ -334,7 +360,7 @@ Tried in order — the first working method is used:
    - Each screenshare scaled and overlaid with a PTS offset (`setpts` + `overlay`)
    - Each audio clip delayed to its start time (`adelay`) then mixed with `amix normalize=0`
    - Encoded with the selected GPU encoder or CPU `libx264`
-8. **Output** — `Class-<id>.mp4`; or `.m4a` for audio-only (skips steps 5–7 for video)
+8. **Output** — `Class-<id>.mp4`
 
 ---
 
@@ -343,7 +369,6 @@ Tried in order — the first working method is used:
 | File | Description |
 |------|-------------|
 | `Class-<id>.mp4` | Final synced video |
-| `Class-<id>.m4a` | Audio-only export |
 | `<id>/timeline.xml` | Serialised timeline — inspect or reuse for re-render |
 | `<id>/` | Extracted raw files — safe to delete after a successful render |
 
@@ -358,9 +383,8 @@ Tried in order — the first working method is used:
 | `ToolNotFoundError` — ffmpeg/ffprobe not found | Add FFmpeg's `bin` folder to PATH, or set a custom path in GUI → Advanced → FFmpeg path. |
 | `MediaProcessingError` — "No media files with a valid pacingTick" | Extracted folder may be empty or corrupt from an earlier interrupted download. Delete `<id>/` and retry. |
 | GPU option grayed out | That encoder is not in your FFmpeg build. Use the `win64-gpl` build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases). |
-| Audio is very quiet | Affects v0.3 and earlier — `amix` was halving volume. Update to v0.4. |
 | Download restarts from 0 after interruption | Affects v0.3 and earlier — no resume support. Update to v0.4. |
-| No screenshare in output | The class had no screenshare stream, only audio. Use `--audio-only`. |
+| No screenshare in output | The class had no screenshare stream, only audio. |
 
 ---
 
@@ -374,11 +398,9 @@ Tried in order — the first working method is used:
 
 ### v0.4 
 
-*Audio export · download resume · GPU validation · six bug fixes.*
+*Download resume · GPU validation · bug fixes.*
 
 **New**
-- `--audio-only` + GUI checkbox: export `.m4a` without any video processing — 10–20× faster, ~95% smaller file size
-- `--trim-silence` + GUI checkbox: remove long silent gaps using FFmpeg's `silenceremove` filter
 - HTTP `Range` resume: an interrupted download continues from the existing partial file on disk
 - GPU auto-detection: header chip shows detected hardware; selecting an unavailable encoder shows an error dialog and reverts
 - Auto-open output file when done, custom FFmpeg path in Advanced, clipboard URL auto-fill on launch
@@ -398,7 +420,7 @@ Tried in order — the first working method is used:
 *First GUI release.*
 
 **New**
-- `vcd_gui.py` — PySide6 desktop GUI wrapping the unchanged v0.2 core
+- PySide6 desktop GUI wrapping the unchanged v0.2 core
 - Quality presets: Ultra (1080p) / High (720p) / Balanced (720p) / Compact (480p) / Custom
 - GPU encoder selection: NVIDIA NVENC · AMD AMF · Intel QSV · CPU
 - Batch queue, job history (`~/.vcd/history.json`), output files tab with thumbnail extraction
