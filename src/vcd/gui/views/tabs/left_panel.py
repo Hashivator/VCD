@@ -400,13 +400,19 @@ class LeftPanel(QWidget):
         self.retry_lbl.setVisible(visible)
 
     def set_progress(self, mode: str, pct: int):
-        self.bar.setValue(pct)
-        if mode == "download":
-            self.bar.setStyleSheet(_BAR_DOWNLOAD)
-        elif mode == "render":
-            self.bar.setStyleSheet(_BAR_RENDER)
+        if getattr(self, "_bar_mode", None) != mode:
+            self._bar_mode = mode
+            #        self.bar.setValue(pct)
+            if mode == "download":
+                self.bar.setStyleSheet(_BAR_DOWNLOAD)
+            elif mode == "render":
+                self.bar.setStyleSheet(_BAR_RENDER)
 
     def set_running(self, running: bool):
+        if running:
+            self._pulse.stop()
+        else:
+            self._pulse.start()
         self.go_btn.setVisible(not running)
         self.stop_btn.setVisible(running)
         self.open_btn.setVisible(False)

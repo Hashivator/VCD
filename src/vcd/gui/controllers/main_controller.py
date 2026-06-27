@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
-from PySide6.QtCore import QThread, QTimer, QUrl
+from PySide6.QtCore import QObject, QProcess, QThread, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -41,7 +41,7 @@ except Exception:
     core = None
 
 
-class MainController:
+class MainController(QObject):
     def __init__(
         self,
         view,
@@ -50,6 +50,8 @@ class MainController:
         settings_manager: SettingsManager,
         tray_manager=None,
     ):
+        super().__init__()
+
         self._view = view
         self._left = view.left_panel
         self._log_tab = view.log_tab
@@ -72,6 +74,7 @@ class MainController:
 
         self._thread = None
         self._worker = None
+        self._thumb_process = None
 
         self._elapsed_timer = QTimer()
         self._elapsed_timer.setInterval(1000)
@@ -268,6 +271,10 @@ class MainController:
         render_params = self._left.read_render_params()
         gpu_idx = render_params.pop("gpu_index", 0)
         gpu_key = GPU_KEYS[gpu_idx] if gpu_idx < len(GPU_KEYS) else "cpu"
+        # Pop keys that are passed explicitly to avoid duplicate keyword arguments
+        render_params.pop("xml_only", None)
+        render_params.pop("verify_ssl", None)
+        render_params.pop("reuse", None)
         return dict(
             url=url,
             rid=rid,
@@ -390,7 +397,7 @@ class MainController:
             "INFO",
             f"Output → {os.path.join(params['output_dir'], params['output_name'])}",
         )
-        self._thread = QThread()
+        self._thread = QThread(self)
         self._worker = Worker(params)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -402,8 +409,8 @@ class MainController:
         self._worker.sig_bytes.connect(self._on_bytes)
         self._worker.sig_done.connect(self._on_done)
         self._worker.sig_done.connect(self._thread.quit)
-        self._worker.sig_done.connect(self._worker.deleteLater)
-        self._thread.finished.connect(self._thread.deleteLater)
+        #        self._worker.sig_done.connect(self._worker.deleteLater)
+        #        self._thread.finished.connect(self._thread.deleteLater)
         self._thread.start()
 
     def _stop(self):
@@ -498,8 +505,6 @@ class MainController:
                 self._tray.notify("VCD — Failed", message, error=True)
             self._auto_retry()
 
-        self._thread = None
-        self._worker = None
         self._queue_complete_current(ok)
 
     def _auto_retry(self) -> bool:
@@ -545,38 +550,41 @@ class MainController:
     def _maybe_extract_thumb(self, video_path: str):
         if not video_path or not os.path.isfile(video_path) or core is None:
             return
-        try:
-            ff = core.find_tool("ffmpeg")
-            if not ff:
-                return
-            dur = self._probe_duration(video_path)
-            t = max(2.0, dur * 0.35) if dur > 0 else 30.0
-            _THUMB_DIR.mkdir(parents=True, exist_ok=True)
-            out = str(_THUMB_DIR / (Path(video_path).stem + ".jpg"))
-            r = subprocess.run(
-                [
-                    ff,
-                    "-y",
-                    "-ss",
-                    f"{t:.1f}",
-                    "-i",
-                    video_path,
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    "scale=260:-1",
-                    "-q:v",
-                    "4",
-                    out,
-                ],
-                capture_output=True,
-                timeout=12,
-            )
-            if r.returncode == 0 and Path(out).exists():
-                self._history.update_last(thumb=out)
-                self._refresh_files()
-        except Exception:
-            pass
+        ff = core.find_tool("ffmpeg")
+        if not ff:
+            return
+        dur = self._probe_duration(video_path)
+        t = max(2.0, dur * 0.35) if dur > 0 else 30.0
+        _THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        out = str(_THUMB_DIR / (Path(video_path).stem + ".jpg"))
+
+        self._thumb_process = QProcess()
+        self._thumb_process.finished.connect(
+            lambda exit_code, exit_status: self._on_thumb_finished(exit_code, out)
+        )
+        self._thumb_process.start(
+            ff,
+            [
+                "-y",
+                "-ss",
+                f"{t:.1f}",
+                "-i",
+                video_path,
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=260:-1",
+                "-q:v",
+                "4",
+                out,
+            ],
+        )
+
+    def _on_thumb_finished(self, exit_code, out_path):
+        if exit_code == 0 and Path(out_path).exists():
+            self._history.update_last(thumb=out_path)
+            self._refresh_files()
+        self._thumb_process = None
 
     def _refresh_history(self):
         entries = self._history.entries

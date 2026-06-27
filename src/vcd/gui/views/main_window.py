@@ -3,13 +3,11 @@ from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
-    QMainWindow,
     QMessageBox,
     QSplitter,
     QTabWidget,
     QToolButton,
     QVBoxLayout,
-    QWidget,
 )
 
 from vcd.gui.constants import _APP_ICON_B64, SKY

@@ -1,5 +1,7 @@
 import json
 
+from PySide6.QtCore import QTimer
+
 from vcd.gui.constants import _HISTORY_FILE, _MAX_HISTORY
 
 
@@ -7,6 +9,10 @@ class JobHistoryDB:
     def __init__(self):
         self._entries: list = []
         self._load()
+
+        self._save_timer = QTimer()
+        self._save_timer.setSingleShot(True)
+        self._save_timer.timeout.connect(self._perform_save)
 
     def add(self, entry: dict):
         self._entries.insert(0, entry)
@@ -40,6 +46,9 @@ class JobHistoryDB:
             self._entries = []
 
     def _save(self):
+        self._save_timer.start(500)
+
+    def _perform_save(self):
         try:
             _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
             _HISTORY_FILE.write_text(

@@ -101,6 +101,9 @@ class Worker(QObject):
     sig_log = Signal(str, str)
     sig_progress = Signal(str, int)
     sig_stage = Signal(str)
+    sig_speed = Signal(str)
+    sig_eta = Signal(str)
+    sig_bytes = Signal(str, str)
     sig_done = Signal(bool, str, str)
 
     def __init__(self, params: dict):
@@ -123,11 +126,9 @@ class Worker(QObject):
     @Slot()
     def run(self):
         p = self.p
-        old_cwd = os.getcwd()
         try:
             out_dir = Path(p["output_dir"]).expanduser()
             out_dir.mkdir(parents=True, exist_ok=True)
-            os.chdir(out_dir)
 
             self.sig_stage.emit("Checking FFmpeg...")
             tools = init_tools()
@@ -135,7 +136,7 @@ class Worker(QObject):
             self._ck()
 
             rid = p["rid"]
-            result_dir = Path(rid)
+            result_dir = out_dir / rid
 
             if p["reuse"] and result_dir.is_dir():
                 self.sig_log.emit(
@@ -188,7 +189,7 @@ class Worker(QObject):
 
             if not p["xml_only"]:
                 self.sig_stage.emit("Rendering video...")
-                output_video = Path(p["output_name"]).resolve()
+                output_video = out_dir / p["output_name"]
 
                 render_video_from_timeline(
                     renderer=self.renderer,
@@ -211,6 +212,3 @@ class Worker(QObject):
                 self.sig_done.emit(False, "Stopped.", "")
             else:
                 self.sig_done.emit(False, str(exc), "")
-
-        finally:
-            os.chdir(old_cwd)
